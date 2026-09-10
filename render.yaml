@@ -7,17 +7,17 @@ services:
     name: hiver-ai-support-agent
     runtime: python
     plan: free
-    # Installing torch CPU-only *before* requirements.txt matters: plain
-    # `pip install torch` on Linux pulls the default CUDA-bundled wheel plus
-    # a long tail of nvidia-* packages (cuda-toolkit, nvidia-cudnn,
-    # nvidia-cublas, etc.) even though Render's instances have no GPU. That
-    # bloats the build and, worse, the extra CUDA shared libraries get
-    # mapped into the process at runtime -- a real contributor to this
-    # service exceeding its 512MB memory limit. The CPU-only wheel from
-    # PyTorch's own index skips all of that; sentence-transformers (which
-    # requirements.txt installs next) is satisfied by whichever torch is
-    # already present, so it won't overwrite this with the CUDA build.
-    buildCommand: pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt
+    # A first attempt ran `pip install torch --index-url .../cpu` as its own
+    # command before `pip install -r requirements.txt`. That didn't stick --
+    # the SECOND command is a separate pip invocation with no knowledge of
+    # the CPU index, and its resolver pulled the full CUDA-bundled `torch`
+    # (plus a dozen nvidia-* packages) straight back in from the default
+    # PyPI index to satisfy transformers/sentence-transformers' version
+    # constraints, silently overwriting the CPU-only install. The fix is to
+    # resolve everything in ONE pip call, with the CPU index as the PRIMARY
+    # index (so "torch" only ever resolves there) and PyPI as a fallback
+    # for every other package via --extra-index-url.
+    buildCommand: pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple -r requirements.txt
     startCommand: uvicorn src.server:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
