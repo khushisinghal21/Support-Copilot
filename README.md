@@ -47,8 +47,8 @@ Two examples end to end:
 ## Running it
 
 ```bash
-git clone [https://github.com/nanthitha25/hiver_assignment.git](https://github.com/khushisinghal21/Support-Copilot.git)
-cd hiver_assignment
+git clone https://github.com/khushisinghal21/Support-Copilot.git
+cd Support-Copilot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -111,7 +111,18 @@ Diagrams, full gate-by-gate spec, and citations: `docs/specs/`.
 
 Full reasoning for each: [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md).
 
-* **Rejected by design** -- live per-ticket debate routing, LLM self-reported confidence, a fine-tuned classifier, a learned meta-model over signals. All add complexity/cost without a clear safety win over the current deterministic cascade.
-* **Tested and rejected, with evidence** -- an agentic retry loop for intent classification made accuracy *worse* (48.9-50.5% vs. 52.2% baseline); a 3-role debate judge cost 3x with no accuracy gain over a single-call judge.
+* **Rejected by design** -- a live per-ticket **debate agent** (multiple LLM "roles" arguing out each triage decision before it's made), LLM self-reported confidence, a fine-tuned classifier, a learned meta-model over signals. All add complexity/cost without a clear safety win over the current deterministic cascade.
+* **Tested and rejected, with evidence** -- an agentic retry loop for intent classification made accuracy *worse* (48.9-50.5% vs. 52.2% baseline); a 3-role **debate agent** as the LLM judge cost 3x the API calls with no accuracy gain over a single-call judge, so it was simplified back down.
 * **Safety-driven scope boundaries** -- no tool-calling/real actions (draft-and-recommend only), no persistent memory (stateless by design), no data-poisoning defense (the corpus is static, not a live vector store -- that attack surface doesn't exist yet).
 * **Known limitations, deferred** -- semantic-similarity fallback for synonyms, full multilingual embeddings, real sentence-transformer retrieval (sandbox-blocked, not abandoned), and softmax recalibration (the real bug was data leakage, not temperature) -- real gaps, disclosed rather than hidden.
+
+---
+
+## Future scope
+
+Full detail: [`docs/REPORT.md`](docs/REPORT.md) Section 6 ("What We'd Do Next With One More Week").
+
+* **Active learning** -- feed human accept/reject/edit decisions on auto-drafted replies back into the vector store as fresh, human-validated examples.
+* **Multi-turn thread context** -- use conversation history (`in_reply_to_tweet_id`) so the agent doesn't re-ask what's already known.
+* **Bayesian threshold tuning** -- optimize the confidence-gate thresholds against a target cost-per-escalation trade-off instead of hand-picked values.
+* **Automated red-teaming** -- a prompt-injection/jailbreak tester that tries to make the agent leak internal prompts or offer fake gift cards.
