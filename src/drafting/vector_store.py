@@ -3,8 +3,6 @@
 import json
 import logging
 from typing import List, Dict, Optional
-import chromadb
-from sentence_transformers import SentenceTransformer
 from src.config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL_NAME, KAGGLE_PAIRS_PATH, GOLDEN_SET_PATH
 from src.drafting.historical_data import HISTORICAL_APPLE_RESOLUTIONS
 from src.data.heuristic_intent import heuristic_intent
@@ -67,6 +65,16 @@ class HistoricalVectorStore:
     """Manages the embedded ChromaDB vector collection for customer support RAG."""
 
     def __init__(self, persist_dir: Optional[str] = None, collection_name: str = "apple_support_resolutions"):
+        # chromadb and sentence_transformers are imported here, not at module
+        # level. A module-level import would make every "import src.server"
+        # (which imports this module transitively) pay the full cost of
+        # importing torch/chromadb before the ASGI server can even bind its
+        # port -- on a low-CPU deploy host that import cost alone was enough
+        # to blow past the platform's port-scan timeout, independent of how
+        # lazily the objects below are actually constructed.
+        import chromadb
+        from sentence_transformers import SentenceTransformer
+
         self.persist_dir = str(persist_dir or CHROMA_PERSIST_DIR)
         self.collection_name = collection_name
         self.client = chromadb.PersistentClient(path=self.persist_dir)

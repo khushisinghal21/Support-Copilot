@@ -2,7 +2,6 @@
 
 from typing import Dict, List, Optional
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from src.models import AppleIntentEnum, IntentResult
 from src.intent.taxonomy import INTENT_PROTOTYPES
 from src.config import EMBEDDING_MODEL_NAME, MIN_INTENT_CONFIDENCE
@@ -17,6 +16,14 @@ class SemanticCentroidClassifier:
         confidence_threshold: float = MIN_INTENT_CONFIDENCE,
         temperature: float = 0.08,
     ):
+        # sentence_transformers (and the torch it pulls in) is imported here,
+        # not at module level -- see the matching note in
+        # src/drafting/vector_store.py for why: a module-level import would
+        # make every "import src.server" pay torch's import cost, which is
+        # slow enough on a low-CPU deploy host to block the ASGI server's
+        # port from opening before the platform's port-scan timeout.
+        from sentence_transformers import SentenceTransformer
+
         self.model_name = model_name
         self.confidence_threshold = confidence_threshold
         self.temperature = temperature
