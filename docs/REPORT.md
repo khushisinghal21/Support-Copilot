@@ -170,3 +170,19 @@ While our **Macro-F1 of 0.5587** and **Triage Accuracy of 60.1%** may look stron
 ## 7. Decision Log
 
 The 15 non-obvious engineering decisions behind this system, and the reasoning/trade-offs for each, are documented as a standalone deliverable in [`docs/DECISION_LOG.md`](DECISION_LOG.md) (Deliverable 5), rather than duplicated here.
+
+---
+
+## 8. Citations & Borrowed Tooling
+
+Per the assignment's instruction ("Cite anything you borrowed. Borrowing is fine; not knowing what you borrowed is not"), here is every external dataset, model, and library this system depends on:
+
+1. **Kaggle Customer Support Dataset** -- `thoughtvector/customer-support-on-twitter` (Kaggle, CC BY-NC-SA 4.0). Source of every real `@AppleSupport` tweet/reply pair used to build the RAG corpus and the golden evaluation set.
+2. **Sentence Transformers (`all-MiniLM-L6-v2`)** -- Reimers, N., & Gurevych, I. (2019). *Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks*, EMNLP 2019. Used for zero-shot intent classification and RAG retrieval embeddings.
+3. **ChromaDB** -- Chroma Core Team (2023), Apache 2.0. In-process vector store for the historical resolution corpus.
+4. **DuckDB** -- Raasveldt, M., & Mühleisen, H. (2019). *DuckDB: an Embeddable Analytical Database*, SIGMOD 2019. Used to stream-extract `@AppleSupport` pairs from the 3M-row raw Kaggle CSV without loading it all into memory.
+5. **Scikit-learn** -- Pedregosa, F. et al. (2011). *Scikit-learn: Machine Learning in Python*, JMLR 12. TF-IDF + Logistic Regression baseline, and `cohen_kappa_score` for human-agreement calibration.
+6. **Pydantic v2** -- Colvin, S. et al. (2023). Runtime schema validation across the pipeline.
+7. **FastAPI & Uvicorn** -- Ramírez, S. et al. (2018). ASGI backend for the dashboard and REST API.
+8. **Landis & Koch (1977)**, *The measurement of observer agreement for categorical data*, Biometrics 33(1). Interpretation scale for this report's Cohen's Kappa (Section 3) -- our measured $\kappa = 0.0716$ falls in their "Slight agreement" band.
+9. **Google Gemini (`google-genai` SDK)** -- grounded reply generation and LLM-as-a-judge scoring, with model/SDK-version-aware "thinking" token handling in `src/llm_utils.py`.
