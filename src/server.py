@@ -30,7 +30,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize pipeline lazily on startup
+# Pipeline is genuinely lazy: constructed on the FIRST real request, not at
+# import or startup. This used to be undermined by an @app.on_event("startup")
+# handler below that called get_pipeline() eagerly -- which loads two full
+# SentenceTransformer models (intent classifier + retrieval encoder) before
+# the app finishes starting up. Locally that's a barely-noticeable ~2-5s
+# delay, but on a low-CPU host (e.g. Render's free tier, 0.1 vCPU) it was
+# slow enough that the ASGI server's port never opened before the platform's
+# port-scan timeout, and the deploy failed with "no open ports detected" --
+# a deploy failure that had nothing to do with Render config and everything
+# to do with this eager call contradicting its own "lazily" comment. Removed
+# the startup hook; the first real request now pays a one-time model-load
+# cost instead, and the port binds immediately regardless of host CPU.
 _pipeline: Optional[SupportPipeline] = None
 
 
@@ -91,11 +102,6 @@ SAMPLE_SCENARIOS = [
         "expected": "ESCALATE (HUMAN_AGENT_REQUESTED)",
     },
 ]
-
-
-@app.on_event("startup")
-async def startup_event():
-    get_pipeline()
 
 
 @app.get("/api/health")
