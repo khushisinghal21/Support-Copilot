@@ -27,3 +27,18 @@ The live link checker (decision-adjacent, see `src/drafting/link_checker.py`) co
 **Fix**: rewrote that prompt rule to ask the customer for a DM in plain text (no URL at all) and restricted "Links" to only ever cite a specific, real support article already present in the retrieved historical context -- never a link whose sole purpose is "message us" or "contact us." The link checker stays in place as a safety net for any other fabricated URL, but this removes the one bug that was causing it to fire on essentially every PII/account-escalation case in the first place.
 
 This is a good illustration of the same principle behind several of the 15 decisions above: when a guardrail catches something, trace it to the actual cause (here, a bad prompt instruction) rather than treating the catch itself as the fix.
+
+---
+
+## Explicitly Rejected / Out of Scope (2026-09-10)
+
+Decisions made *against* building certain things, kept here for the same reason the 15 decisions above are -- so the reasoning isn't lost.
+
+**Rejected by design** (added complexity/cost, no clear safety win over the current deterministic cascade): live per-ticket human debate routing, LLM self-reported confidence scores, a fine-tuned intent classifier, a learned meta-model combining multiple signals.
+
+**Tested and rejected, with evidence**: an agentic reformulation loop that retries intent classification on low confidence -- measured *worse* accuracy (48.9-50.5% vs. the 52.2% single-pass baseline). A 3-role debate judge for the LLM-judge eval -- 3x the API cost with no measurable accuracy gain over a single-call judge, so simplified back to one call.
+
+**Safety-driven scope boundaries** (deliberate, not oversights): no tool-calling or real actions -- the agent only drafts and recommends, it never executes a refund, account change, or anything else. No persistent memory across messages -- stateless by design, so a single compromised turn can't poison later replies. No data-poisoning defense for the retrieval corpus -- out of scope because the corpus is currently static, not a live-updating vector store, so that attack surface doesn't exist yet.
+
+**Known limitations, deferred, not hidden**: semantic-similarity fallback for grounding synonyms (real gap; GloVe embeddings are available but building this properly was too large to rush into this submission). Full multilingual retrieval (built language-aware BM25 routing; real multilingual embeddings are still missing). Real sentence-transformer embeddings for retrieval (blocked by this sandbox's network restrictions during development; a scope/time item, not abandoned). Temperature-calibrated softmax on intent confidence (would require rebuilding the classifier architecture; the actual calibration bug turned out to be data leakage in the golden set, not softmax temperature -- fixing the real bug made this unnecessary). A higher worker count in the parallel eval runner (more threads than available API keys just queue behind the same rate limit -- no speedup).
+
