@@ -24,16 +24,17 @@ Global consumer tech brands like **`@AppleSupport`** receive tens of thousands o
 * **Outraged Churn Threats**: *"3 weeks and Apple stole my money, getting my lawyer involved."*
 
 ### 1.2 The "LLM Trap" (Why Naive AI Fails in Production)
-Placing a generic, unconstrained Large Language Model directly in front of public customer inquiries leads to four catastrophic failure modes:
+Placing a generic, unconstrained Large Language Model directly in front of public customer inquiries leads to five catastrophic failure modes:
 1. **Hallucinated Policies & Unauthorized Promises**: Naive LLMs invent warranty policies, promise free hardware replacements, or advise risky steps (e.g., unauthorized battery puncturing or unofficial jailbreaks).
 2. **Deadly False-Positive Auto-Handling**: When a customer reports a swelling battery or smoking charger, a naive bot might cheerfully reply: *"We'd love to help! Have you tried restarting your device?"* That is a physical safety liability and a public PR disaster.
 3. **Public Privacy (PII) Leaks**: A model may solicit customer Apple ID passwords, phone numbers, or credit card numbers in public tweet threads.
 4. **Tone-Deaf Responses to Outraged Customers**: Emitting canned corporate greetings to a customer threatening legal action inflames customer outrage and drives public churn.
+5. **Plausible-Looking Fabricated Links**: An LLM asked to "direct the customer somewhere private" will confidently invent a URL that *looks* official (right domain, plausible slug) but doesn't lead anywhere real. This one wasn't hypothetical here -- see Engine 2's Guardrails below for the real case found in this project and how it's now caught and fixed at the root.
 
 ### 1.3 The Solution: Three Production-Grade Pillars
 To make an autonomous agent trustworthy enough to deploy in production, our architecture enforces three distinct capabilities:
 1. **Intent Classification**: Maps messy, colloquial tweets into an operational 5-class taxonomy derived empirically from data, safely routing ambiguous cases to human specialists.
-2. **Grounded Reply Drafting (RAG)**: Retrieves historical resolution pairs from `@AppleSupport` and drafts replies strictly grounded in verified brand history (under 280 characters, official `apple.co` URLs only).
+2. **Grounded Reply Drafting (RAG)**: Retrieves historical resolution pairs from `@AppleSupport` and drafts replies strictly grounded in verified brand history (under 280 characters, official `apple.co` URLs only, and -- optionally -- live-verified before shipping).
 3. **Deterministic Safety Triage & Escalation Gate**: Cascading rule-based gates designed to catch physical hazards, thermal risks, liquid immersion, fraud, PII, and customer aggression before auto-handling. Measured at **93.8% escalation recall (2 missed cases out of 32)** on the current golden set -- not a guaranteed zero, and reported honestly rather than rounded up (see Section 3 below and `docs/REPORT.md`).
 
 ![Hiver AI Support Pipeline Workflow](./docs/assets/pipeline_workflow.png)
@@ -58,18 +59,31 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Step 2: Run Headline Benchmark Runner (< 20 Seconds)
+### Step 2: Configure Environment Variables (Optional, but Recommended)
+Copy `.env.example` to `.env` and set a real `GEMINI_API_KEY` if you have one:
 ```bash
-# Runs Baseline 1, Baseline 2, and Proposed System across all 200 Golden Set queries
+cp .env.example .env
+# then edit .env and paste in your key
+```
+| Variable | Default | Purpose |
+| :--- | :--- | :--- |
+| `GEMINI_API_KEY` | *(empty)* | Without a key, the generator and judge both fall back to deterministic/template behavior -- the offline eval harness still runs and produces real metrics, but "LLM Judge Quality" and grounded generation are only genuinely LLM-graded/LLM-drafted with a key set. |
+| `GEMINI_MODEL_NAME` | `gemini-3.6-flash` | See `src/config.py` for why 2.x-generation models are no longer available to new API keys. |
+| `LLM_PROVIDER` | `gemini` | Set to `mock` to force template-only mode. |
+| `ENABLE_LIVE_LINK_CHECK` | `false` | Set to `true` to have `src/drafting/link_checker.py` actually fetch any URL a drafted reply cites before shipping it, catching a dead or fabricated link a domain whitelist alone would miss. Deliberately off by default so the bulk eval run below stays offline and fast -- see `src/config.py`'s comment for the full reasoning. Recommended `true` for live dashboard/CLI/API use. |
+
+### Step 3: Run Headline Benchmark Runner (< 20 Seconds)
+```bash
+# Runs Baseline 1, Baseline 2, and Proposed System across all 188 Golden Set queries
 python -m src.eval.runner
 ```
 
-### Step 3: Run Automated Test Suite (All 33 Tests)
+### Step 4: Run Automated Test Suite (Full Suite, 82 Test Functions)
 ```bash
 pytest tests/ -v
 ```
 
-### Step 4: Launch Interactive Web Dashboard & Backend API
+### Step 5: Launch Interactive Web Dashboard & Backend API
 ```bash
 # Start FastAPI backend and interactive browser UI on port 8000
 ./run.sh
@@ -94,7 +108,9 @@ Evaluated across the same **188-sample hand-labelled Golden Set** (~20% disclose
 | **Missed Escalations (of 32 true)** | 32 | 24 | **2** | **30 fewer missed** |
 | **LLM Judge Quality (1–5 Scale)** | — | 3.95 | **4.55** | **+0.60** |
 | **Human Agreement ($\kappa$)** | N/A | N/A | **$\kappa = 0.0716$ ("Slight agreement")** | **⚠️ weak -- see below** |
-| **P95 Latency (CPU)** | < 1 ms | ~5 ms | **44.09 ms** | Real-time ready |
+| **P95 Latency (CPU, offline eval)** | < 1 ms | ~5 ms | **44.09 ms** | Real-time ready |
+
+> **Note on latency**: the 44.09 ms P95 above is measured by the offline eval harness, which does not call a live LLM or verify links (see Section 2's `ENABLE_LIVE_LINK_CHECK` note). A live single query with a real Gemini call and link verification enabled will take several seconds instead -- that's expected and isn't a regression, it's just a different, non-benchmarked code path.
 
 ### Read this table correctly, not just at face value:
 * **Triage Accuracy is *lower* for the production system than for either baseline.** That looks bad out of context, and it's exactly why raw accuracy is the wrong headline metric for a safety system: the Trivial baseline scores 82.5% by classifying almost everything `AUTO_HANDLE`, which also means it misses **100% of the 32 real safety escalations** in this set. The production system trades some accuracy for **93.8% escalation recall** (missing only 2 of 32 dangerous cases) because a false escalation costs a human reviewer a few seconds while a missed one is a safety failure -- see `docs/REPORT.md` Section 5, *"What is Misleading About My Headline Number?"*, for the full discussion.
@@ -278,6 +294,7 @@ sequenceDiagram
   * **PII Redaction**: Forbids requesting private credentials (Apple ID password, full serial numbers, credit cards) publicly, *and* blocks a draft that echoes back PII-shaped text the customer themselves posted (`check_pii_echo`).
   * **Unsafe-Advice Block**: Blocks drafts recommending physically unsafe self-repair (e.g. opening a swollen battery) via `check_unsafe_advice`.
   * **Grounding Check**: `check_grounding` requires lexical content-word overlap between a draft and its retrieved snippets as a cheap, model-free proxy for "this isn't inventing a procedure unrelated to what was actually retrieved."
+  * **Live Link Verification (`src/drafting/link_checker.py`, opt-in via `ENABLE_LIVE_LINK_CHECK`)**: The domain whitelist above only proves a link's *domain* is official Apple -- it can't tell a real page from a fabricated one on that same domain. That gap was real, not hypothetical: the drafting prompt used to literally instruct the model to cite `apple.co/directmessage` whenever a reply needed to move to a private channel, but that page doesn't exist (Twitter/X DMs require the customer to already be logged in -- there's no fixed public "click here to DM us" URL). This guardrail actually fetches any URL a draft cites and flags it (`UNVERIFIED_LINK_IN_DRAFT`) if it's dead or bounces to the bare domain root instead of the specific page it claimed. **Root cause was then fixed directly in `src/drafting/prompts.py`**: the model is now told to ask for a DM in plain text (no URL at all) and to only ever cite a URL when quoting a real article from the retrieved historical context -- see `docs/DECISION_LOG.md`'s addendum for the full story. Off by default in the bulk eval harness (checking 150-250 live URLs per run would break the "runs offline" guarantee); on by default for live dashboard/CLI/API use.
 
 ### Engine 3: Deterministic Triage & Escalation Gate (`src/triage/`)
 Evaluates queries through a cascading sequence of priority gates (real order, from `src/triage/engine.py`):
@@ -289,7 +306,7 @@ Evaluates queries through a cascading sequence of priority gates (real order, fr
 6. **Gate 6 (Intent Uncertainty, hard floor)**: Intent confidence below `MIN_INTENT_CONFIDENCE` forces escalation (`LOW_CONFIDENCE_AMBIGUOUS`).
 7. **Gate 6b (Clarify)**: Moderate confidence on a device-dependent intent (OS/Hardware) with no device named in the text asks a clarifying question instead of guessing or escalating (`AMBIGUOUS_DEVICE_NEEDS_CLARIFICATION`, `TriageAction.CLARIFY`) -- modeled on a real historical case where an @AppleSupport agent asked which device before answering.
 8. **Gate 7 (Retrieval Grounding)**: Low historical retrieval similarity forces escalation (`LOW_CONFIDENCE_AMBIGUOUS`).
-9. **Gate 8 (Generation Guardrail Failure)**: Routed to a specific reason (`PII_ECHO_IN_DRAFT`, `UNSAFE_ADVICE_BLOCKED`, `UNGROUNDED_GENERATION`) rather than one generic bucket, so the stated reason describes what actually failed.
+9. **Gate 8 (Generation Guardrail Failure)**: Routed to a specific reason (`PII_ECHO_IN_DRAFT`, `UNSAFE_ADVICE_BLOCKED`, `UNGROUNDED_GENERATION`, `UNVERIFIED_LINK_IN_DRAFT`) rather than one generic bucket, so the stated reason describes what actually failed.
 10. **Gate 9 (Auto-Handle)**: Everything else clears to `AUTO_HANDLE`.
 
 ---
@@ -306,6 +323,7 @@ Evaluates queries through a cascading sequence of priority gates (real order, fr
    * **Security/Fraud**: *"Someone hacked my iCloud and bought 100 gift cards, cancel this now!"* $\rightarrow$ **`ESCALATE TO HUMAN AGENT`** (`HIGH_FRUSTRATION_CHURN_RISK`)
    * **Public PII**: *"My Apple ID is locked, here is my email test.user@icloud.com and phone 415-555-0199."* $\rightarrow$ **`ESCALATE TO HUMAN AGENT`** (`PII_SECURITY_SENSITIVE`)
    * **Human Demand**: *"Stop sending me automated bot replies! I want to speak to a real human person right now."* $\rightarrow$ **`ESCALATE TO HUMAN AGENT`** (`HUMAN_AGENT_REQUESTED`)
+   * **Battery Usage Question (routine, real link)**: *"My iPhone battery drains really fast since the last update. How can I check which apps are using the most battery?"* $\rightarrow$ **`AUTO_HANDLE APPROVED`** grounded in a real historical resolution; with `ENABLE_LIVE_LINK_CHECK=true` any cited link is fetched and confirmed real before it ships.
 
 ### Method 2: Terminal CLI
 ```bash
@@ -378,9 +396,11 @@ hiver_assignment/
 ├── run.sh                              # Single-command launcher for Web UI + Backend API
 ├── pyproject.toml                      # Project metadata & dependency definitions
 ├── requirements.txt                    # Pinned Python package dependencies
+├── .env.example                        # Template for GEMINI_API_KEY / ENABLE_LIVE_LINK_CHECK / etc. (copy to .env)
 │
 ├── src/                                # Core Application Source Code
-│   ├── config.py                       # Central thresholds, model paths, brand constants
+│   ├── config.py                       # Central thresholds, model paths, brand constants, feature flags
+│   ├── llm_utils.py                    # Gemini thinking-config builder (model/SDK-version-aware)
 │   ├── models.py                       # Strict Pydantic v2 schemas (TweetInput, SupportResponse, etc.)
 │   ├── pipeline.py                     # SupportPipeline orchestrator coordinating all 3 stages
 │   ├── cli.py                          # Typer interactive CLI interface
@@ -395,7 +415,8 @@ hiver_assignment/
 │   │   ├── vector_store.py             # ChromaDB vector store manager
 │   │   ├── retriever.py                # Contextual semantic retriever
 │   │   ├── generator.py                # Grounded reply generator
-│   │   ├── guardrails.py               # Output guardrail (280 chars, URL whitelist, PII check)
+│   │   ├── guardrails.py               # Output guardrail (280 chars, URL whitelist, PII, link check)
+│   │   ├── link_checker.py             # Live URL verification (opt-in, see Engine 2 above)
 │   │   ├── prompts.py                  # Apple Support tone system prompts
 │   │   └── historical_data.py          # Seed resolution pairs
 │   ├── triage/                         # Safety Triage & Escalation Engine
@@ -406,22 +427,32 @@ hiver_assignment/
 │   ├── eval/                           # Evaluation Harness & Metrics
 │   │   ├── runner.py                   # 15-minute benchmark evaluation runner (< 20s execution)
 │   │   ├── judge.py                    # LLM-as-a-Judge rubric (Groundedness, Tone, Safety)
-│   │   ├── human_agreement.py          # Cohen's Kappa calculator (κ = 0.72)
+│   │   ├── human_agreement.py          # Cohen's Kappa calculator (real, unfloored)
 │   │   ├── metrics.py                  # Classification reports, Macro-F1, confusion matrices
-│   │   ├── report_generator.py         # Automated REPORT.md generator
-│   │   └── curate_datasets.py          # Golden set generator utility
+│   │   ├── failure_analysis.py         # Mines real top-failure-mode clusters from a run's mismatches
+│   │   ├── report_generator.py         # Automated REPORT.md + benchmark_summary.json generator
+│   │   └── curate_datasets.py          # Retired template-based generator, kept for history only
 │   └── data/
-│       └── ingest_kaggle.py            # DuckDB streaming Kaggle customer support extractor
+│       ├── ingest_kaggle.py            # DuckDB streaming Kaggle customer support extractor
+│       └── heuristic_intent.py         # Independent labelling heuristic used to build the golden set
+│
+├── scripts/                            # One-off utilities (golden-set build, calibration)
+│   ├── build_golden_set.py             # Labels the real Kaggle pairs into golden_eval_set.jsonl
+│   ├── finalize_golden_set.py          # Manual-review pass over escalation candidates
+│   ├── build_human_annotations.py      # Builds the human-agreement calibration sample
+│   └── calibrate_thresholds.py         # Sweeps MIN_INTENT_CONFIDENCE / MIN_RETRIEVAL_SIMILARITY
 │
 ├── data/                               # Evaluation & Historical Corpora
 │   ├── README.md                       # Deliverable 2: Sampling & Labelling Methodology Guide
-│   ├── golden_eval_set.jsonl           # Deliverable 2: 200 hand-labelled test queries
+│   ├── golden_eval_set.jsonl           # Deliverable 2: 188 hand-labelled test queries
 │   ├── human_annotations_sample.jsonl  # Deliverable 3: 50 human-annotated pairs for judge calibration
 │   └── apple_support_kaggle_pairs.jsonl# Extracted Kaggle customer support pairs
 │
 ├── docs/                               # Assignment Documentation & Audit Artifacts
 │   ├── REPORT.md                       # Deliverable 4: Technical report (problem framing, results vs 2 baselines, failure analysis, misleading-number section, next steps)
-│   ├── DECISION_LOG.md                 # Deliverable 5: Standalone 15-item architectural decision log
+│   ├── DECISION_LOG.md                 # Deliverable 5: Standalone 15-item architectural decision log + addenda
+│   ├── AUDIT_AND_FIX_PLAN.md           # Full audit trail: what was wrong, what was fixed, and why
+│   ├── benchmark_summary.json          # Machine-readable output of the last eval run (feeds this README's Section 3)
 │   ├── specs/                          # Formal Specifications (00 through 05)
 │   │   ├── 00_index.md
 │   │   ├── 01_system_architecture_spec.md
@@ -433,74 +464,42 @@ hiver_assignment/
 │       ├── 00_master_execution_plan.md
 │       └── ...
 │
-└── tests/                              # Automated Pytest Suite (33 Tests)
+└── tests/                              # Automated Pytest Suite (82 test functions)
     ├── test_models.py                  # Schema validation & fail-closed contracts
     ├── test_intent.py                  # Taxonomy, classifier, and baseline tests
+    ├── test_intent_taxonomy.py         # Intent prototype/taxonomy regression tests
     ├── test_drafting.py                # RAG retrieval, guardrails, and character constraints
     ├── test_triage.py                  # Safety rules, PII detection, and escalation triggers
+    ├── test_hardening.py               # Negation handling, prompt injection, CLARIFY gate, corroboration
     ├── test_pipeline.py                # End-to-end pipeline integration & circuit breaker
-    └── test_eval.py                    # Golden dataset integrity & Cohen's Kappa calibration
+    ├── test_eval.py                    # Golden dataset integrity & Cohen's Kappa calibration
+    ├── test_judge.py                   # LLM-judge truncation handling & deterministic fallback
+    ├── test_llm_utils.py               # Gemini thinking-config selection across model/SDK versions
+    └── test_link_checker.py            # Live link verification: verified / broken / suspicious-redirect / inconclusive
 ```
 
 ### Deliverables Traceability Matrix
 
 | Assignment Deliverable | Repository Artifact | Notes & Compliance |
 | :--- | :--- | :--- |
-| **Deliverable 1: Runnable Pipeline** | [`README.md`](README.md), [`src/pipeline.py`](src/pipeline.py), [`run.sh`](run.sh) | Reproduces all headline results in ~20 seconds (< 15 min requirement). |
+| **Deliverable 1: Runnable Pipeline** | [`README.md`](README.md), [`src/pipeline.py`](src/pipeline.py), [`run.sh`](run.sh) | Reproduces all headline results in well under 15 minutes; see Section 2 for `.env` setup. |
 | **Deliverable 2: Golden Evaluation Set** | [`data/golden_eval_set.jsonl`](data/golden_eval_set.jsonl), [`data/README.md`](data/README.md) | 188 examples sampled and labelled from real `@AppleSupport` tweets, ~20% disclosed edge cases (adversarial + hard negatives), full sampling/labelling methodology note including known limitations. |
 | **Deliverable 3: Evaluation Harness & Judge** | [`src/eval/runner.py`](src/eval/runner.py), [`src/eval/judge.py`](src/eval/judge.py), [`data/human_annotations_sample.jsonl`](data/human_annotations_sample.jsonl) | Automated metrics + LLM-as-a-judge rubric, honestly calibrated against 50 human-scored samples -- see `docs/REPORT.md` Section 3 for the real measured kappa (no hardcoded floor). |
 | **Deliverable 4: Technical Report** | [`docs/REPORT.md`](docs/REPORT.md) | Full report covering Problem Framing, Results vs 2 Baselines, Top Failure Modes (mined from the actual run), *"What is Misleading About My Headline Number?"*, and Next Steps. Regenerate with `python -m src.eval.runner` before relying on it -- see that file. |
-| **Deliverable 5: Architectural Decision Log** | [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) | Standalone plain list of 15 non-obvious engineering decisions and trade-off rationales. |
+| **Deliverable 5: Architectural Decision Log** | [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) | Standalone plain list of 15 non-obvious engineering decisions and trade-off rationales, plus a dated addendum on the link-fabrication root-cause fix. |
 | **Ground Rule: Tooling Citations** | Section 10 in [`README.md`](README.md), Section 8 in [`docs/REPORT.md`](docs/REPORT.md) | Full accounting and citations of all borrowed datasets, embeddings, models, and libraries. |
 
 ---
 
 ## 🧪 9. Running the Automated Tests
 
-The test suite validates schema enforcement, model calibration, RAG retrieval quality, deterministic safety regexes, and evaluation metrics:
+The test suite (82 test functions across 11 files) validates schema enforcement, model calibration, RAG retrieval quality, deterministic safety regexes, guardrails (including live link verification), and evaluation metrics:
 
 ```bash
 pytest tests/ -v
 ```
 
-Expected output:
-```text
-tests/test_drafting.py::test_retriever_returns_relevant_battery_resolutions PASSED
-tests/test_drafting.py::test_retriever_returns_wifi_resolutions PASSED
-tests/test_drafting.py::test_guardrail_length_pass_and_fail PASSED
-tests/test_drafting.py::test_guardrail_catches_pii_solicitation PASSED
-tests/test_drafting.py::test_guardrail_url_whitelisting PASSED
-tests/test_drafting.py::test_generator_drafts_safe_reply PASSED
-tests/test_eval.py::test_golden_dataset_schema PASSED
-tests/test_eval.py::test_human_judge_agreement_calibration PASSED
-tests/test_eval.py::test_report_file_generation PASSED
-tests/test_intent.py::test_majority_baseline_classifier PASSED
-tests/test_intent.py::test_simple_tfidf_classifier PASSED
-tests/test_intent.py::test_semantic_classifier_hardware_intent PASSED
-tests/test_intent.py::test_semantic_classifier_account_intent PASSED
-tests/test_intent.py::test_semantic_classifier_software_intent PASSED
-tests/test_intent.py::test_semantic_classifier_how_to_intent PASSED
-tests/test_intent.py::test_semantic_classifier_ambiguous_fallback PASSED
-tests/test_intent.py::test_semantic_classifier_latency PASSED
-tests/test_models.py::test_tweet_input_valid PASSED
-tests/test_models.py::test_tweet_input_rejects_empty_text PASSED
-tests/test_models.py::test_intent_result_valid PASSED
-tests/test_models.py::test_intent_result_rejects_invalid_confidence PASSED
-tests/test_models.py::test_triage_decision_valid PASSED
-tests/test_models.py::test_support_response_full_serialization PASSED
-tests/test_pipeline.py::test_pipeline_single_tweet_default_execution PASSED
-tests/test_pipeline.py::test_pipeline_batch_processing PASSED
-tests/test_pipeline.py::test_pipeline_fail_closed_circuit_breaker PASSED
-tests/test_triage.py::test_triage_battery_hazard_escalation PASSED
-tests/test_triage.py::test_triage_pii_email_escalation PASSED
-tests/test_triage.py::test_triage_human_request_escalation PASSED
-tests/test_triage.py::test_triage_high_frustration_lawsuit_threat PASSED
-tests/test_triage.py::test_triage_low_confidence_escalation PASSED
-tests/test_triage.py::test_triage_low_retrieval_similarity_escalation PASSED
-tests/test_triage.py::test_triage_safe_auto_handle_clearance PASSED
-
-============================= 33 passed in 48.38s ==============================
-```
+Most of the suite is offline and network-free by design (pure regex/rule logic, golden-set integrity, guardrail logic with mocked HTTP calls). A handful of tests in `test_drafting.py`, `test_intent.py`, and `test_pipeline.py` load the real `sentence-transformers/all-MiniLM-L6-v2` embedding model on first use, which requires outbound access to huggingface.co -- in a network-restricted environment those specific tests will error with a proxy/connection error rather than fail on logic (see `docs/AUDIT_AND_FIX_PLAN.md` Section 7 for exactly which ones and why); they pass normally on a machine with regular internet access, which is the expected environment for this project.
 
 ---
 
@@ -531,4 +530,7 @@ In accordance with the assignment instructions (*"Cite anything you borrowed. Bo
    - **Usage**: Async ASGI web server powering the interactive dashboard and REST verification endpoints.
 8. **Inter-Annotator Agreement Rubric**:
    - **Citation**: Landis, J. R., & Koch, G. G. (1977). *The measurement of observer agreement for categorical data*. Biometrics, 33(1), 159-174.
-   - **Usage**: Benchmark scale for interpreting Cohen's Kappa ($\kappa = 0.7200$, establishing Substantial Agreement).
+   - **Usage**: Benchmark scale used to interpret this project's measured Cohen's Kappa. The current measured value ($\kappa = 0.0716$, "Slight agreement" on Landis & Koch's own scale) is reported honestly in `docs/REPORT.md` Section 3 -- see Section 3 above for why this is weaker than an earlier, incorrectly-floored version of this codebase used to claim.
+9. **Google Gemini (`google-genai` SDK)**:
+   - **Citation**: Google DeepMind. *Gemini API* (`google-genai` Python SDK).
+   - **Usage**: Grounded reply generation (`src/drafting/generator.py`) and LLM-as-a-judge scoring (`src/eval/judge.py`), with `src/llm_utils.py` handling model-generation- and SDK-version-specific "thinking" token configuration so replies aren't silently truncated.
