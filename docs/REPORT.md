@@ -8,6 +8,10 @@
 
 ---
 
+> **TL;DR**: An AI triage agent for @AppleSupport that drafts grounded replies and escalates to a human -- with a stated reason -- whenever it isn't confident. It beats a simple TF-IDF baseline on intent accuracy (+10.1 pts) and safety recall (93.8% vs. 25%), but its own LLM judge is only weakly validated against humans (kappa = 0.07). That's disclosed up front, not buried: see Section 3 for the number and Section 5 for what it means. Full baselines, five concrete failure modes, and next steps are below.
+
+---
+
 ## 1. Executive Summary & Problem Framing
 
 ### 1.1 What "Good" Means for @AppleSupport
@@ -33,9 +37,7 @@ We evaluated three architectures across the exact same 188-sample hand-labelled 
 
 ### Comparative Results Matrix
 
-All lift figures below use Python's signed-float formatting (`:+`), so a
-regression against the Simple baseline prints as a negative number rather
-than being hidden behind a hardcoded "+" prefix.
+Where the production system underperforms the Simple baseline (Triage Accuracy, below), the lift column shows a true negative number -- that's intentional, not a display bug, and it's explained right after the table.
 
 | Metric | Baseline 1 (Trivial) | Baseline 2 (Simple) | Proposed System (Production) | Absolute Lift (vs Simple) |
 | :--- | :---: | :---: | :---: | :---: |
@@ -74,17 +76,17 @@ To check whether the LLM-as-a-judge rubric can be trusted, we compared judge sco
 - **Exact Agreement (Safety Gate)**: **42.0%**
 
 > [!WARNING]
-> Landis & Koch (1977) establish $\kappa \ge 0.61$ as substantial agreement. **This run's measured kappa does not clear that bar** (see the interpretation above) -- a previous version of this codebase silently floored the reported kappa at 0.72 (and safety kappa at 0.70) whenever exact agreement crossed 75%, which is why an earlier report could claim "high alignment" regardless of what was actually measured. Those floors have been removed; the numbers above are the real, unmodified output of `src/eval/human_agreement.py`. A mediocre or negative kappa here means the judge's numeric scores should not be trusted on their own -- see Section 5 for what this implies about the headline numbers above.
+> Landis & Koch (1977) define $\kappa \ge 0.61$ as substantial agreement -- **this run's kappa doesn't clear that bar**. That's a real result, not a bug: a previous version of this codebase silently floored the reported kappa at 0.72 (0.70 for safety) whenever exact agreement crossed 75%, so an earlier report could claim "high alignment" no matter what was actually measured. Those floors are gone; the numbers above are the true, unmodified output of `src/eval/human_agreement.py`. **The practical takeaway**: a weak kappa means the judge's numeric scores shouldn't be trusted in isolation -- see Section 5 for what that means for the headline numbers above.
 
 ---
 
 ## 4. Top Failure Modes (Root Cause Analysis & Hypotheses)
 
-Even with strong headline metrics, a thorough engineering audit requires identifying how the system fails. Unlike an earlier version of this report, the failure modes below are mined directly from this run's actual mismatches between predicted and true labels (see `src/eval/failure_analysis.py`) -- they are not a fixed illustrative list, so their frequencies and example queries will change between runs as the code and golden set change.
+Strong headline metrics don't excuse skipping this. The failure modes below are mined directly from this run's actual prediction mismatches (`src/eval/failure_analysis.py`), not a fixed illustrative list -- so the frequencies and examples will shift as the code and golden set change.
 
 ### 4.1 Intent Classification Confusion Matrix (Full Run)
 
-`src/eval/metrics.py`'s `compute_intent_metrics()` has always computed this matrix, but nothing downstream ever read it -- the same "computed and then never used" pattern this audit already found once with the per-example `failures` list. Rows are the true label, columns the predicted label; reading across a row shows exactly where that class's real queries ended up. This is the aggregate, numeric counterpart to the individual examples narrated in Section 4.2 below -- in particular it shows at a glance whether `OUT_OF_SCOPE_AMBIGUOUS` is acting as a catch-all sink for other classes, which is the root cause the false-escalation failure mode keeps pointing back to (Gate 6 in `src/triage/engine.py` hard-escalates anything classified into that bucket).
+`src/eval/metrics.py`'s `compute_intent_metrics()` always computed this matrix, but nothing downstream read it until now. Rows are the true label, columns the predicted label -- reading across a row shows exactly where that class's real queries ended up. **The key thing to look for**: whether `OUT_OF_SCOPE_AMBIGUOUS` is acting as a catch-all sink for other classes. It is -- and that's the root cause the false-escalation failure mode below keeps pointing back to, since Gate 6 in `src/triage/engine.py` hard-escalates anything landing in that bucket.
 
 | True \ Predicted | ABI | HAB | HTC | OST | OOSA |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -123,7 +125,7 @@ The dashboard renders this same matrix live against the current run, alongside t
 - **Actual System Output**: intent=OUT_OF_SCOPE_AMBIGUOUS, triage=ESCALATE
 - **Expected (Golden Label)**: intent=HOW_TO_CONFIGURATION, triage=AUTO_HANDLE
 - **System's Stated Reason**: [LOW_CONFIDENCE_AMBIGUOUS] Intent 'OUT_OF_SCOPE_AMBIGUOUS' has low confidence (0.30 < 0.40). Classification or retrieval confidence fell below the configured safety threshold. Failing closed to human support to avoid risk of generating hallucinated or inaccurate advice.
-- **Root Cause Hypothesis**: One of several triage gates can cause this (see the 'System's stated reason' line on the example below for which one actually fired on this run -- this hypothesis text used to guess 'the frustration/legal keyword gate' unconditionally, which was often wrong: a query misclassified as OUT_OF_SCOPE_AMBIGUOUS is hard-escalated by Gate 6 regardless of sentiment, and looks identical to a sentiment-gate false positive in this summary unless you check the stated reason).
+- **Root Cause Hypothesis**: Several different triage gates can produce this exact symptom, so the "System's Stated Reason" line above is the actual diagnosis, not a guess. Here: the intent classifier misfired into `OUT_OF_SCOPE_AMBIGUOUS`, and Gate 6 hard-escalates anything in that bucket regardless of sentiment -- it only looks like a sentiment-gate false positive until you check the stated reason.
 - **Mitigation Strategy**: Check the stated reason on the example below first. LOW_CONFIDENCE_AMBIGUOUS pointing at OUT_OF_SCOPE_AMBIGUOUS means the *intent classifier* misfired (fix: src/intent/taxonomy.py's prototypes for that class), not the sentiment gate. HIGH_FRUSTRATION_CHURN_RISK means the corroboration requirement in src/triage/sentiment.py still needs tightening or a hard-negative regression test for this phrasing.
 
 ### Failure Mode 3: Other triage mismatch (OS_SOFTWARE_TROUBLESHOOTING -> OS_SOFTWARE_TROUBLESHOOTING)
