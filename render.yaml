@@ -7,7 +7,17 @@ services:
     name: hiver-ai-support-agent
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    # Installing torch CPU-only *before* requirements.txt matters: plain
+    # `pip install torch` on Linux pulls the default CUDA-bundled wheel plus
+    # a long tail of nvidia-* packages (cuda-toolkit, nvidia-cudnn,
+    # nvidia-cublas, etc.) even though Render's instances have no GPU. That
+    # bloats the build and, worse, the extra CUDA shared libraries get
+    # mapped into the process at runtime -- a real contributor to this
+    # service exceeding its 512MB memory limit. The CPU-only wheel from
+    # PyTorch's own index skips all of that; sentence-transformers (which
+    # requirements.txt installs next) is satisfied by whichever torch is
+    # already present, so it won't overwrite this with the CUDA build.
+    buildCommand: pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt
     startCommand: uvicorn src.server:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION

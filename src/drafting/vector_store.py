@@ -65,20 +65,26 @@ class HistoricalVectorStore:
     """Manages the embedded ChromaDB vector collection for customer support RAG."""
 
     def __init__(self, persist_dir: Optional[str] = None, collection_name: str = "apple_support_resolutions"):
-        # chromadb and sentence_transformers are imported here, not at module
-        # level. A module-level import would make every "import src.server"
-        # (which imports this module transitively) pay the full cost of
-        # importing torch/chromadb before the ASGI server can even bind its
-        # port -- on a low-CPU deploy host that import cost alone was enough
-        # to blow past the platform's port-scan timeout, independent of how
-        # lazily the objects below are actually constructed.
+        # chromadb is imported here, not at module level. A module-level
+        # import would make every "import src.server" (which imports this
+        # module transitively) pay the full cost of importing
+        # torch/chromadb before the ASGI server can even bind its port -- on
+        # a low-CPU deploy host that import cost alone was enough to blow
+        # past the platform's port-scan timeout, independent of how lazily
+        # the objects below are actually constructed.
+        #
+        # get_encoder() (src/embeddings.py) caches the SentenceTransformer
+        # by model name, so this shares the same in-memory model instance
+        # with SemanticCentroidClassifier instead of loading a second,
+        # redundant copy -- that duplication was a contributor to an
+        # out-of-memory crash on Render's 512MB free tier.
         import chromadb
-        from sentence_transformers import SentenceTransformer
+        from src.embeddings import get_encoder
 
         self.persist_dir = str(persist_dir or CHROMA_PERSIST_DIR)
         self.collection_name = collection_name
         self.client = chromadb.PersistentClient(path=self.persist_dir)
-        self.encoder = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        self.encoder = get_encoder(EMBEDDING_MODEL_NAME)
         self.collection = self.client.get_or_create_collection(
             name=self.collection_name,
             metadata={"hnsw:space": "cosine"}

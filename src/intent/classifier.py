@@ -16,18 +16,24 @@ class SemanticCentroidClassifier:
         confidence_threshold: float = MIN_INTENT_CONFIDENCE,
         temperature: float = 0.08,
     ):
-        # sentence_transformers (and the torch it pulls in) is imported here,
-        # not at module level -- see the matching note in
-        # src/drafting/vector_store.py for why: a module-level import would
-        # make every "import src.server" pay torch's import cost, which is
-        # slow enough on a low-CPU deploy host to block the ASGI server's
-        # port from opening before the platform's port-scan timeout.
-        from sentence_transformers import SentenceTransformer
+        # get_encoder() is imported here, not at module level -- see the
+        # matching note in src/drafting/vector_store.py for why: a
+        # module-level import would make every "import src.server" pay
+        # sentence_transformers/torch's import cost, which is slow enough on
+        # a low-CPU deploy host to block the ASGI server's port from opening
+        # before the platform's port-scan timeout.
+        #
+        # get_encoder() (src/embeddings.py) also caches the model by name,
+        # so this doesn't load a second copy of the encoder into memory when
+        # HistoricalVectorStore has already loaded the same model -- two
+        # independent SentenceTransformer(EMBEDDING_MODEL_NAME) instances was
+        # a contributor to an out-of-memory crash on Render's 512MB tier.
+        from src.embeddings import get_encoder
 
         self.model_name = model_name
         self.confidence_threshold = confidence_threshold
         self.temperature = temperature
-        self.encoder = SentenceTransformer(model_name)
+        self.encoder = get_encoder(model_name)
         self.centroids: Dict[AppleIntentEnum, np.ndarray] = {}
         self._build_default_centroids()
 
