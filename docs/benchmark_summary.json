@@ -1,0 +1,93 @@
+{
+  "generated_at": "2026-09-10T17:10:47.451665+00:00",
+  "golden_set": {
+    "n": 188,
+    "n_edge": 38,
+    "pct_edge": 20
+  },
+  "triage": {
+    "trivial": {
+      "accuracy": 0.8245,
+      "escalation_recall": 0.0,
+      "missed_escalation_count": 32
+    },
+    "simple": {
+      "accuracy": 0.75,
+      "escalation_recall": 0.25,
+      "missed_escalation_count": 24
+    },
+    "production": {
+      "accuracy": 0.6011,
+      "escalation_recall": 0.9375,
+      "missed_escalation_count": 2,
+      "total_escalations_true": 32
+    }
+  },
+  "intent": {
+    "production": {
+      "macro_f1": 0.5587,
+      "accuracy": 0.6223,
+      "labels": [
+        "ACCOUNT_BILLING_ICLOUD",
+        "HARDWARE_AND_BATTERY",
+        "HOW_TO_CONFIGURATION",
+        "OS_SOFTWARE_TROUBLESHOOTING",
+        "OUT_OF_SCOPE_AMBIGUOUS"
+      ],
+      "confusion_matrix": [
+        [
+          28,
+          0,
+          1,
+          2,
+          5
+        ],
+        [
+          2,
+          25,
+          1,
+          13,
+          6
+        ],
+        [
+          6,
+          4,
+          4,
+          3,
+          3
+        ],
+        [
+          2,
+          1,
+          1,
+          45,
+          6
+        ],
+        [
+          9,
+          3,
+          2,
+          1,
+          15
+        ]
+      ]
+    }
+  },
+  "judge": {
+    "simple": {
+      "overall_score": 3.95
+    },
+    "production": {
+      "overall_score": 4.55
+    }
+  },
+  "human_agreement": {
+    "mean_cohen_kappa": 0.0716,
+    "agreement_interpretation": "Slight agreement",
+    "exact_agreement_safety_pct": 42.0,
+    "num_samples": 50
+  },
+  "latency_ms": {
+    "p95_production": 44.09
+  }
+}

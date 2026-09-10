@@ -1,0 +1,145 @@
+"""End-to-end AI Customer Support & Triage Pipeline orchestrator."""
+
+import json
+import time
+import logging
+from typing import List, Optional
+from src.models import (
+    TweetInput,
+    SupportResponse,
+    IntentResult,
+    RetrievalResult,
+    TriageDecision,
+    TriageAction,
+    EscalationReasonCode,
+    AppleIntentEnum,
+)
+from src.intent.classifier import SemanticCentroidClassifier
+from src.drafting.retriever import HistoricalRetriever
+from src.drafting.generator import GroundedReplyGenerator
+from src.triage.engine import TriageEngine
+from src.triage.reasons import get_clarifying_question
+from src.config import DECISION_LOG_PATH
+
+logger = logging.getLogger(__name__)
+
+
+def _append_decision_log(response: SupportResponse) -> None:
+    """Appends every pipeline decision to a local JSONL audit log -- the seed
+    of an active-learning / recalibration loop. With real traffic, a human
+    agent's accept/override of each decision could be appended to the same
+    row and used to re-tune triage thresholds against actual outcomes
+    instead of a fixed one-time golden-set snapshot. Best-effort: never let
+    logging failures affect the customer-facing response."""
+    try:
+        row = {
+            "tweet_id": response.tweet_id,
+            "intent": response.intent.primary_intent.value,
+            "intent_confidence": response.intent.confidence,
+            "triage_action": response.triage.action.value,
+            "triage_reason_code": response.triage.reason_code.value if response.triage.reason_code else None,
+            "risk_score": response.triage.risk_score,
+            "execution_time_ms": response.execution_time_ms,
+        }
+        with open(DECISION_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception as e:  # pragma: no cover - logging must never break the pipeline
+        logger.warning(f"Failed to write decision audit log: {e}")
+
+
+class SupportPipeline:
+    """Orchestrates ingestion, classification, RAG retrieval, reply generation, and triage."""
+
+    def __init__(
+        self,
+        intent_classifier: Optional[SemanticCentroidClassifier] = None,
+        retriever: Optional[HistoricalRetriever] = None,
+        reply_generator: Optional[GroundedReplyGenerator] = None,
+        triage_engine: Optional[TriageEngine] = None,
+    ):
+        self.intent_classifier = intent_classifier or SemanticCentroidClassifier()
+        self.retriever = retriever or HistoricalRetriever()
+        self.reply_generator = reply_generator or GroundedReplyGenerator()
+        self.triage_engine = triage_engine or TriageEngine()
+
+    def process(self, tweet: TweetInput) -> SupportResponse:
+        """Processes a single incoming customer tweet through the end-to-end pipeline."""
+        start_time = time.perf_counter()
+
+        try:
+            # 1. Intent Classification
+            intent_res: IntentResult = self.intent_classifier.predict(tweet.text)
+
+            # 2. Historical Retrieval (RAG)
+            rag_res: RetrievalResult = self.retriever.retrieve(
+                query=tweet.text,
+                intent=intent_res.primary_intent.value,
+                k=3,
+            )
+
+            # 3. Grounded Reply Drafting
+            drafted_reply, guardrail_passed, violations = self.reply_generator.generate(
+                tweet=tweet.text,
+                intent=intent_res.primary_intent.value,
+                retrieval_result=rag_res,
+            )
+
+            # 4. Triage & Escalation Decision
+            triage_res: TriageDecision = self.triage_engine.evaluate(
+                tweet=tweet,
+                intent_res=intent_res,
+                rag_res=rag_res,
+                drafted_reply=drafted_reply,
+                guardrail_passed=guardrail_passed,
+                guardrail_violations=violations,
+            )
+
+            # If triage decided to escalate, withhold the auto-drafted reply
+            # to prevent a risky auto-send. If it decided to clarify, send a
+            # short clarifying question instead of either the raw draft or
+            # silence.
+            if triage_res.action == TriageAction.AUTO_HANDLE:
+                final_reply = drafted_reply
+            elif triage_res.action == TriageAction.CLARIFY:
+                final_reply = get_clarifying_question(triage_res.reason_code)
+            else:
+                final_reply = None
+
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+            response = SupportResponse(
+                tweet_id=tweet.tweet_id,
+                intent=intent_res,
+                triage=triage_res,
+                drafted_reply=final_reply,
+                grounding_context=rag_res,
+                execution_time_ms=round(duration_ms, 2),
+            )
+            _append_decision_log(response)
+            return response
+
+        except Exception as e:
+            # Non-negotiable Engineering Rule: Fail-Closed on any unhandled exception
+            logger.error(f"SupportPipeline encountered error processing tweet {tweet.tweet_id}: {e}", exc_info=True)
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+            return SupportResponse(
+                tweet_id=tweet.tweet_id,
+                intent=IntentResult(
+                    primary_intent=AppleIntentEnum.OUT_OF_SCOPE_AMBIGUOUS,
+                    confidence=0.0,
+                ),
+                triage=TriageDecision(
+                    action=TriageAction.ESCALATE,
+                    stated_reason=f"Pipeline exception occurred, failing closed to protect customer: {str(e)}",
+                    reason_code=EscalationReasonCode.SYSTEM_EXCEPTION_FAIL_CLOSED,
+                    risk_score=1.0,
+                    triggered_rules=["CIRCUIT_BREAKER_FAIL_CLOSED"],
+                ),
+                drafted_reply=None,
+                grounding_context=None,
+                execution_time_ms=round(duration_ms, 2),
+            )
+
+    def batch_process(self, tweets: List[TweetInput]) -> List[SupportResponse]:
+        """Processes a batch of tweets sequentially."""
+        return [self.process(tweet) for tweet in tweets]

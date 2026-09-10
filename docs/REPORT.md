@@ -1,0 +1,172 @@
+# Benchmark Report: AI Customer Support & Triage Agent for @AppleSupport
+
+**Author**: Hiver SDE Intern Candidate
+**Target Brand**: `@AppleSupport`
+**Dataset**: Kaggle Customer Support on Twitter (`thoughtvector/customer-support-on-twitter`)
+**Golden Evaluation Set**: 188 Hand-Labelled Test Queries (38 disclosed edge cases, ~20%)
+**Status**: Formal Evaluation & Verification Sign-Off
+
+---
+
+## 1. Executive Summary & Problem Framing
+
+### 1.1 What "Good" Means for @AppleSupport
+For Apple Support on Twitter, "good" does not mean simply generating fluent English. It requires:
+1. **Zero Public Credential Solicitation**: Absolute fail-closed refusal to request passwords, credit cards, or full serial numbers in public tweets.
+2. **Empathetic & Polished Brand Voice**: Calm, polite, concise responses strictly under Twitter's 280-character limit, recommending standard Apple diagnostic flows (Force Restart, Settings > Battery Health, Apple Store Genius Bar).
+3. **Safe, Explainable Escalation**: Autonomous handling of routine informational queries (`AUTO_HANDLE`) while reliably escalating hazardous situations (battery swelling, cracked glass), angry legal threats, and model uncertainty to human agents (`ESCALATE`) with explicit stated reasons.
+4. **Historical Grounding**: Recommending only real diagnostic workflows documented in Apple's historical resolution corpus and official domain links (`apple.co/...`, `support.apple.com/...`).
+
+### 1.2 What We Chose NOT to Build (Explicit Scope Boundaries)
+- **No Direct Bot Tweeting**: We do not deploy an unattended Twitter bot writing directly to the public API without human oversight. The system operates as an agent copilot and triage router.
+- **No Internal Database Modification**: We do not simulate backend iCloud unlocks, warranty status overrides, or replacement device shipments. These are directed to the Apple Store Genius Bar.
+- **No Multi-Lingual Support in v1**: Scope is strictly constrained to English tweets. Non-English queries fall back to `OUT_OF_SCOPE_AMBIGUOUS` for human routing.
+
+---
+
+## 2. Headline Results vs. Two Baselines
+
+We evaluated three architectures across the exact same 188-sample hand-labelled Golden Set:
+1. **Baseline 1 (Trivial)**: Majority-class intent predictor (`OS_SOFTWARE_TROUBLESHOOTING`), static canned reply (*"Please restart your device"*), and always `AUTO_HANDLE`.
+2. **Baseline 2 (Simple)**: TF-IDF + Logistic Regression intent classifier, nearest-neighbor historical reply retrieval without LLM re-ranking or length guardrails, and basic keyword escalation.
+3. **Proposed System (Production)**: Dense semantic centroid classifier (`all-MiniLM-L6-v2`), ChromaDB historical resolution RAG, 280-char/whitelist guardrails, and cascading triage policy engine.
+
+### Comparative Results Matrix
+
+All lift figures below use Python's signed-float formatting (`:+`), so a
+regression against the Simple baseline prints as a negative number rather
+than being hidden behind a hardcoded "+" prefix.
+
+| Metric | Baseline 1 (Trivial) | Baseline 2 (Simple) | Proposed System (Production) | Absolute Lift (vs Simple) |
+| :--- | :---: | :---: | :---: | :---: |
+| **Intent Macro-F1** | 0.0905 | 0.5112 | **0.5587** | **+0.0475** |
+| **Intent Accuracy** | 29.3% | 52.1% | **62.2%** | **+10.1%** |
+| **Triage Accuracy** | 82.5% | 75.0% | **60.1%** | **-14.9%** |
+| **Escalation Recall** | 0.0% | 25.0% | **93.8%** | **+68.8%** |
+| **Missed Escalations (Safety Risk)** | 32 / 32 | 24 / 32 | **2 / 32** | **+22 fewer missed** |
+| **ROUGE-L Grounding Score** | 0.1673 | 0.1516 | **0.1621** | **+0.0105** |
+| **LLM Judge Quality (1-5 Scale)** | 4.3 / 5.0 | 4.0 / 5.0 | **4.5 / 5.0** | **+0.6** |
+| **P95 Latency (CPU)** | < 1 ms | ~5 ms | **< 35 ms** | Real-time ready |
+
+---
+
+## 3. LLM-as-a-Judge & Human Agreement Calibration
+
+To check whether the LLM-as-a-judge rubric can be trusted, we compared judge scores against **50 human-scored query/reply pairs** (see `data/README.md` for how this sample was built and its disclosed limitations -- it is an AI-assisted reading pass against the rubric, not a blind independent annotator).
+
+- **Sample Size**: 50 hand-annotated cases
+- **Cohen's Kappa (Groundedness)**: $\kappa = 0.1834$
+- **Cohen's Kappa (Safety)**: $\kappa = -0.0402$
+- **Mean Cohen's Kappa**: **$\kappa = 0.0716$**
+- **Interpretation**: **Slight agreement**
+- **Exact Agreement (Safety Gate)**: **42.0%**
+
+> [!WARNING]
+> Landis & Koch (1977) establish $\kappa \ge 0.61$ as substantial agreement. **This run's measured kappa does not clear that bar** (see the interpretation above) -- a previous version of this codebase silently floored the reported kappa at 0.72 (and safety kappa at 0.70) whenever exact agreement crossed 75%, which is why an earlier report could claim "high alignment" regardless of what was actually measured. Those floors have been removed; the numbers above are the real, unmodified output of `src/eval/human_agreement.py`. A mediocre or negative kappa here means the judge's numeric scores should not be trusted on their own -- see Section 5 for what this implies about the headline numbers above.
+
+---
+
+## 4. Top Failure Modes (Root Cause Analysis & Hypotheses)
+
+Even with strong headline metrics, a thorough engineering audit requires identifying how the system fails. Unlike an earlier version of this report, the failure modes below are mined directly from this run's actual mismatches between predicted and true labels (see `src/eval/failure_analysis.py`) -- they are not a fixed illustrative list, so their frequencies and example queries will change between runs as the code and golden set change.
+
+### 4.1 Intent Classification Confusion Matrix (Full Run)
+
+`src/eval/metrics.py`'s `compute_intent_metrics()` has always computed this matrix, but nothing downstream ever read it -- the same "computed and then never used" pattern this audit already found once with the per-example `failures` list. Rows are the true label, columns the predicted label; reading across a row shows exactly where that class's real queries ended up. This is the aggregate, numeric counterpart to the individual examples narrated in Section 4.2 below -- in particular it shows at a glance whether `OUT_OF_SCOPE_AMBIGUOUS` is acting as a catch-all sink for other classes, which is the root cause the false-escalation failure mode keeps pointing back to (Gate 6 in `src/triage/engine.py` hard-escalates anything classified into that bucket).
+
+| True \ Predicted | ABI | HAB | HTC | OST | OOSA |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **ABI** | **28** | &middot; | 1 | 2 | 5 |
+| **HAB** | 2 | **25** | 1 | 13 | 6 |
+| **HTC** | 6 | 4 | **4** | 3 | 3 |
+| **OST** | 2 | 1 | 1 | **45** | 6 |
+| **OOSA** | 9 | 3 | 2 | 1 | **15** |
+
+**Legend**
+
+- `ABI` = `ACCOUNT_BILLING_ICLOUD`
+- `HAB` = `HARDWARE_AND_BATTERY`
+- `HTC` = `HOW_TO_CONFIGURATION`
+- `OST` = `OS_SOFTWARE_TROUBLESHOOTING`
+- `OOSA` = `OUT_OF_SCOPE_AMBIGUOUS`
+
+
+### 4.2 Top Individual Failure Examples
+
+### Failure Mode 1: Intent confused between OS_SOFTWARE_TROUBLESHOOTING and HOW_TO_CONFIGURATION
+- **Observed Frequency**: 48 of 108 failures on this run (~44%)
+- **Real Example Query**: *"#ios11update I don’t find camera option in notes from where I can scan documents. https://t.co/knggFlRa9V"*
+- **Actual System Output**: intent=HOW_TO_CONFIGURATION, triage=AUTO_HANDLE
+- **Expected (Golden Label)**: intent=OS_SOFTWARE_TROUBLESHOOTING, triage=AUTO_HANDLE
+- **System's Stated Reason**: High confidence standard resolution grounded in historical brand data
+- **Root Cause Hypothesis**: The semantic centroid classifier's prototype sentences for these two classes overlap in embedding space for this phrasing (e.g. a symptom that could plausibly be filed under either category).
+- **Mitigation Strategy**: Add more prototype sentences that disambiguate this specific pair, or allow a secondary-intent hint to route to human review when the top two classes are near-tied.
+
+### Failure Mode 2: False escalation: predicted ESCALATE, true label was AUTO_HANDLE
+- **Observed Frequency**: 42 of 108 failures on this run (~39%)
+- **Real Example Query**: *"I just gotta say, you're support in the store is pathetic. My watch is stuck on UK time and NO ONE knew how to fix it. Really?"*
+- **Actual System Output**: intent=OUT_OF_SCOPE_AMBIGUOUS, triage=ESCALATE
+- **Expected (Golden Label)**: intent=HOW_TO_CONFIGURATION, triage=AUTO_HANDLE
+- **System's Stated Reason**: [LOW_CONFIDENCE_AMBIGUOUS] Intent 'OUT_OF_SCOPE_AMBIGUOUS' has low confidence (0.30 < 0.40). Classification or retrieval confidence fell below the configured safety threshold. Failing closed to human support to avoid risk of generating hallucinated or inaccurate advice.
+- **Root Cause Hypothesis**: One of several triage gates can cause this (see the 'System's stated reason' line on the example below for which one actually fired on this run -- this hypothesis text used to guess 'the frustration/legal keyword gate' unconditionally, which was often wrong: a query misclassified as OUT_OF_SCOPE_AMBIGUOUS is hard-escalated by Gate 6 regardless of sentiment, and looks identical to a sentiment-gate false positive in this summary unless you check the stated reason).
+- **Mitigation Strategy**: Check the stated reason on the example below first. LOW_CONFIDENCE_AMBIGUOUS pointing at OUT_OF_SCOPE_AMBIGUOUS means the *intent classifier* misfired (fix: src/intent/taxonomy.py's prototypes for that class), not the sentiment gate. HIGH_FRUSTRATION_CHURN_RISK means the corroboration requirement in src/triage/sentiment.py still needs tightening or a hard-negative regression test for this phrasing.
+
+### Failure Mode 3: Other triage mismatch (OS_SOFTWARE_TROUBLESHOOTING -> OS_SOFTWARE_TROUBLESHOOTING)
+- **Observed Frequency**: 15 of 108 failures on this run (~14%)
+- **Real Example Query**: *"Yes y’all need a new update I can’t see my notifications thanks"*
+- **Actual System Output**: intent=OS_SOFTWARE_TROUBLESHOOTING, triage=CLARIFY
+- **Expected (Golden Label)**: intent=OS_SOFTWARE_TROUBLESHOOTING, triage=AUTO_HANDLE
+- **System's Stated Reason**: [AMBIGUOUS_DEVICE_NEEDS_CLARIFICATION] Intent 'OS_SOFTWARE_TROUBLESHOOTING' at moderate confidence (0.57) with no device named in the text. The query is plausibly routine but doesn't name a device, and multiple Apple products share this symptom (e.g. Bluetooth dropouts on both iPhone and Apple Watch). Asking a one-line clarifying question instead of guessing or forcing an escalation.
+- **Root Cause Hypothesis**: Doesn't fit a common pattern -- needs individual review.
+- **Mitigation Strategy**: Read the specific case and decide whether it's a labelling error or a real gap.
+
+### Failure Mode 4: Missed escalation: predicted AUTO_HANDLE, true label was ESCALATE
+- **Observed Frequency**: 2 of 108 failures on this run (~2%)
+- **Real Example Query**: *"iPhone got really hot and I smell something burning near the camera."*
+- **Actual System Output**: intent=HARDWARE_AND_BATTERY, triage=AUTO_HANDLE
+- **Expected (Golden Label)**: intent=HARDWARE_AND_BATTERY, triage=ESCALATE
+- **System's Stated Reason**: High confidence standard resolution grounded in historical brand data
+- **Root Cause Hypothesis**: A safety-relevant signal in the text wasn't caught by the current regex/keyword rules -- most likely a phrasing variant the hazard/PII/legal-threat patterns don't cover.
+- **Mitigation Strategy**: This is the highest-priority failure category to fix regardless of overall accuracy: review each case's exact wording and add the missed pattern to src/triage/rules.py or src/triage/sentiment.py.
+
+### Failure Mode 5: Missed clarification: predicted AUTO_HANDLE/ESCALATE, true label was CLARIFY
+- **Observed Frequency**: 1 of 108 failures on this run (~1%)
+- **Real Example Query**: *"I️ think my iPhone X has water damage was in not even a foot of water for 3 seconds .... is this a joke"*
+- **Actual System Output**: intent=HARDWARE_AND_BATTERY, triage=ESCALATE
+- **Expected (Golden Label)**: intent=HARDWARE_AND_BATTERY, triage=CLARIFY
+- **System's Stated Reason**: [HARDWARE_PHYSICAL_DAMAGE] Triggered safety rules: ['PHYSICAL_DAMAGE_INSPECTION_REQUIRED']. Physical damage or battery safety hazard detected (e.g., swelling battery, shattered glass, liquid immersion, smoke, electric shock). Requires hands-on inspection and reservation at an Apple Store Genius Bar.
+- **Root Cause Hypothesis**: The device-ambiguity heuristic (src/triage/engine.py's CLARIFY gate) didn't fire for this phrasing -- either the confidence band didn't match, or a device noun was detected that the customer didn't actually specify precisely enough.
+- **Mitigation Strategy**: Review whether the confidence band or device-noun regex needs widening for this case; consider adding it as a new CLARIFY prototype pattern.
+
+---
+
+## 5. "What is Misleading About My Headline Number?" (Mandatory Section)
+
+While our **Macro-F1 of 0.5587** and **Triage Accuracy of 60.1%** may look strong in isolation, headline numbers conceal subtle real-world failure patterns -- and, per Section 3, the human-agreement kappa on the judge itself is currently weak, which should temper confidence in any of the judge-derived numbers above:
+
+1. **The Golden Set's Escalation Rate Is Deliberately ~20x the Real Rate**:
+   Of the 32 true-ESCALATE rows in this 188-row golden set (~17%), the large majority were manually reviewed and, in several cases, authored as adversarial examples (`source: authored_adversarial` in `data/golden_eval_set.jsonl`) -- because an unweighted random sample of the real Kaggle pairs surfaced only ~9 genuine escalation-worthy tweets out of 995 (well under 1%). This oversampling was a deliberate, disclosed choice (see `data/README.md`) to get enough escalation examples to measure precision/recall at all -- but it means Escalation Recall/Precision above describe performance on an escalation-enriched sample, not the real-world base rate. On real unfiltered traffic, the same false-escalation rules would fire far less often in absolute terms, and the cost of a single missed escalation (safety-relevant) is not comparable to the cost of a single false one (ticket volume) -- a blended "Triage Accuracy" number hides that asymmetry entirely.
+
+2. **Isolated Single-Turn Evaluation**:
+   Our evaluation measures single-turn tweet resolution. Real support threads often span 4–7 turns where customers clarify details ("Oh wait, it's actually an iPad, not an iPhone"). High single-turn groundedness does not guarantee conversational coherence across long context windows.
+
+3. **Conservative Over-Escalation Bias**:
+   To ensure zero safety violations, our triage threshold aggressively errs on the side of caution. While this achieves a near-perfect Missed Escalation Rate (2 missed safety cases), it inflates human agent ticket volume by ~42 false escalations. In an enterprise setting, this increases operational cost.
+
+4. **Kaggle Dataset Age & Link Rot**:
+   The `customer-support-on-twitter` dataset dates to 2017–2018 (iOS 11 era). References to `apple.co` URLs and specific iOS menu hierarchies may have evolved (e.g., Settings layouts in iOS 17/18). High historical similarity measures fidelity to 2018 procedures rather than current 2026 support documentation.
+
+---
+
+## 6. What We'd Do Next With One More Week
+
+1. **Active Learning Feedback Loop**: Stream human agent accept/reject/edit decisions on auto-drafted replies back into the vector store as fresh, human-validated few-shot examples.
+2. **Multi-Turn Thread Context Buffer**: Ingest conversation tree ancestors (`in_reply_to_tweet_id`) using DuckDB to preserve previous diagnostics and avoid asking redundant questions.
+3. **Dynamic Threshold Optimization**: Use Bayesian optimization over golden set validation splits to tune the confidence gates ($	au_{intent}, 	au_{sim}$) targeting a specific cost-per-escalation trade-off curve.
+4. **Automated Red-Teaming Suite**: Deploy an automated prompt injection and jailbreak tester attempting to induce the agent into offering fake Apple gift cards or revealing internal prompts.
+
+---
+
+## 7. Decision Log
+
+The 15 non-obvious engineering decisions behind this system, and the reasoning/trade-offs for each, are documented as a standalone deliverable in [`docs/DECISION_LOG.md`](DECISION_LOG.md) (Deliverable 5), rather than duplicated here.

@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Support Copilot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,900&family=Space+Mono:wght@400;700&display=swap');
+
+    :root {
+      --paper: #f2ede1;
+      --paper-2: #e9e1cf;
+      --ink: #1c1a15;
+      --ink-soft: #524d3f;
+      --line: #1c1a15;
+      --stamp-green: #1f5c3f;
+      --stamp-amber: #a15c00;
+      --stamp-red: #8c1f1f;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Space Mono', monospace;
+      background-color: var(--paper);
+      color: var(--ink);
+      background-image: radial-gradient(var(--ink-soft) 0.6px, transparent 0.6px);
+      background-size: 22px 22px;
+      background-position: -10px -10px;
+    }
+
+    .headline { font-family: 'Fraunces', serif; }
+
+    .hard-border { border: 2.5px solid var(--ink); }
+    .hard-border-b { border-bottom: 2.5px solid var(--ink); }
+    .hard-border-t { border-top: 2.5px solid var(--ink); }
+
+    .card {
+      background: var(--paper);
+      border: 2.5px solid var(--ink);
+      box-shadow: 5px 5px 0 var(--ink);
+    }
+
+    .btn-stamp {
+      font-family: 'Space Mono', monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border: 2.5px solid var(--ink);
+      background: var(--ink);
+      color: var(--paper);
+      box-shadow: 4px 4px 0 var(--ink-soft);
+      transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+    .btn-stamp:hover { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink-soft); }
+    .btn-stamp:disabled { opacity: 0.6; transform: none; }
+
+    .stamp {
+      display: inline-block;
+      font-family: 'Fraunces', serif;
+      font-weight: 900;
+      letter-spacing: 0.03em;
+      border: 4px solid currentColor;
+      padding: 0.35rem 1rem;
+      border-radius: 4px;
+      transform: rotate(-3deg);
+    }
+
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: var(--paper-2); }
+    ::-webkit-scrollbar-thumb { background: var(--ink-soft); border: 2px solid var(--paper-2); }
+
+    .dashed-sep { border-top: 2px dashed var(--ink-soft); }
+
+    .field-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--ink-soft);
+    }
+
+    @keyframes blink { 50% { opacity: 0.2; } }
+    .live-dot { animation: blink 1.4s step-start infinite; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <!-- Masthead -->
+  <header class="hard-border-b bg-[var(--paper)]">
+    <div class="max-w-6xl mx-auto px-5 sm:px-8 py-5 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <div class="flex items-center gap-2 field-label mb-1">
+          <span class="w-2 h-2 rounded-full bg-[var(--stamp-green)] live-dot"></span>
+          Live Triage Desk &middot; Vol. 01
+        </div>
+        <h1 class="headline text-3xl sm:text-4xl font-black tracking-tight leading-none">
+          <i class="fa-brands fa-apple mr-1"></i>Support Copilot
+        </h1>
+        <p class="text-xs sm:text-sm text-[var(--ink-soft)] mt-1">Autonomous triage &amp; grounded reply drafting &mdash; Kaggle-grounded evaluation build</p>
+      </div>
+      <a href="/docs" target="_blank" class="btn-stamp px-3.5 py-2 text-xs font-bold flex items-center gap-2 no-underline">
+        <i class="fa-solid fa-terminal text-[10px]"></i> API DOCS
+      </a>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-5 sm:px-8 py-8">
+
+    <!-- Layout note: reference material (live benchmark numbers + the
+         precedent docket) now lives in a sticky left rail, and the actual
+         working flow (file a case -> see its disposition -> check the
+         aggregate confusion matrix) reads top-to-bottom in the wider right
+         column -- the opposite arrangement from the original build, where a
+         full-width KPI strip sat above a left-intake/right-results split.
+         All element IDs are unchanged from before, so the script block
+         below needed no changes, just this repositioning. -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left rail: reference data, sticky on desktop so it stays in view
+           while the right column scrolls. -->
+      <div class="lg:col-span-4 order-2 lg:order-1 space-y-6 lg:sticky lg:top-8 lg:self-start">
+
+        <!-- Benchmark ledger -- populated live from /api/benchmark-summary,
+             written by `python -m src.eval.runner` (see
+             src/eval/report_generator.py's write_benchmark_summary_json). -->
+        <div class="card p-5">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="headline font-bold text-lg"><i class="fa-solid fa-scale-balanced mr-1"></i>Benchmark Ledger</h2>
+          </div>
+          <p class="text-xs text-[var(--ink-soft)] mb-1">Live figures from the latest eval run.</p>
+          <div class="divide-y-2" style="border-color: color-mix(in srgb, var(--ink-soft) 35%, transparent);">
+            <div class="flex items-start justify-between gap-3 py-2.5">
+              <div class="min-w-0">
+                <div class="field-label">Triage Accuracy</div>
+                <div id="kpi-triage-accuracy-sub" class="text-[10px] text-[var(--ink-soft)] mt-0.5">loading&hellip;</div>
+              </div>
+              <div id="kpi-triage-accuracy" class="headline text-xl font-bold text-right shrink-0">&mdash;</div>
+            </div>
+            <div class="flex items-start justify-between gap-3 py-2.5">
+              <div class="min-w-0">
+                <div class="field-label">Escalation Recall</div>
+                <div id="kpi-escalation-recall-sub" class="text-[10px] text-[var(--ink-soft)] mt-0.5">loading&hellip;</div>
+              </div>
+              <div id="kpi-escalation-recall" class="headline text-xl font-bold text-right shrink-0">&mdash;</div>
+            </div>
+            <div class="flex items-start justify-between gap-3 py-2.5">
+              <div class="min-w-0">
+                <div class="field-label">Intent Macro-F1</div>
+                <div id="kpi-intent-f1-sub" class="text-[10px] text-[var(--ink-soft)] mt-0.5">loading&hellip;</div>
+              </div>
+              <div id="kpi-intent-f1" class="headline text-xl font-bold text-right shrink-0">&mdash;</div>
+            </div>
+            <div class="flex items-start justify-between gap-3 py-2.5">
+              <div class="min-w-0">
+                <div class="field-label">Human Agreement</div>
+                <div id="kpi-kappa-sub" class="text-[10px] text-[var(--ink-soft)] mt-0.5">loading&hellip;</div>
+              </div>
+              <div id="kpi-kappa" class="headline text-xl font-bold text-right shrink-0">&mdash;</div>
+            </div>
+            <div class="flex items-start justify-between gap-3 py-2.5">
+              <div class="min-w-0">
+                <div class="field-label">LLM Judge</div>
+                <div id="kpi-judge-sub" class="text-[10px] text-[var(--ink-soft)] mt-0.5">loading&hellip;</div>
+              </div>
+              <div id="kpi-judge" class="headline text-xl font-bold text-right shrink-0">&mdash;</div>
+            </div>
+            <div class="flex items-start justify-between gap-3 py-2.5">
+              <div class="min-w-0">
+                <div class="field-label">P95 Latency</div>
+                <div id="kpi-latency-sub" class="text-[10px] text-[var(--ink-soft)] mt-0.5">loading&hellip;</div>
+              </div>
+              <div id="kpi-latency" class="headline text-xl font-bold text-right shrink-0">&mdash;</div>
+            </div>
+          </div>
+          <div id="kpi-footnote" class="hard-border-t mt-1 pt-3 text-[10px] text-[var(--ink-soft)]">
+            Loading latest benchmark summary&hellip;
+          </div>
+        </div>
+
+        <!-- Precedent docket -->
+        <div class="card p-5">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="headline font-bold text-lg">Precedent Docket</h2>
+            <span class="field-label">click to file</span>
+          </div>
+          <p class="text-xs text-[var(--ink-soft)] mb-3">Pre-reviewed exhibits spanning every triage gate.</p>
+          <div id="scenarios-container" class="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+            <!-- populated -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Right / main: the working flow -- file a case, read its
+           disposition, then (further down) the aggregate confusion matrix
+           for the whole run. -->
+      <div class="lg:col-span-8 order-1 lg:order-2 space-y-6">
+
+        <!-- Case intake -->
+        <div class="card p-5">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="headline font-bold text-lg">Case Intake</h2>
+            <span class="field-label">Form 01-A</span>
+          </div>
+          <form id="tweet-form" class="space-y-3">
+            <div>
+              <label class="field-label block mb-1.5">Incoming @AppleSupport mention</label>
+              <textarea id="tweet-text" rows="4" class="w-full px-3 py-2.5 bg-white border-2 border-[var(--ink)] text-sm resize-none focus:outline-none focus:ring-0 placeholder-[var(--ink-soft)]/60" placeholder="e.g. My iPad won't charge past 1% no matter what I try..."></textarea>
+            </div>
+            <div class="flex items-center justify-between pt-1">
+              <span id="char-count" class="text-xs text-[var(--ink-soft)]">0 / 280 chars</span>
+              <button type="submit" id="submit-btn" class="btn-stamp px-5 py-2 text-xs font-bold flex items-center gap-2">
+                <i class="fa-solid fa-stamp"></i> FILE CASE
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div id="results-placeholder" class="card p-10 text-center border-dashed">
+          <div class="w-14 h-14 border-2 border-[var(--ink-soft)] rounded-full flex items-center justify-center mx-auto mb-4 text-xl text-[var(--ink-soft)]">
+            <i class="fa-solid fa-inbox"></i>
+          </div>
+          <h3 class="headline font-bold text-lg">Docket Empty</h3>
+          <p class="text-sm text-[var(--ink-soft)] max-w-sm mx-auto mt-1">File a case above, or pull an exhibit from the precedent docket on the left, to see the disposition below.</p>
+        </div>
+
+        <div id="results-card" class="hidden space-y-6">
+
+          <!-- Disposition banner -->
+          <div id="triage-banner" class="card p-5">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div class="flex items-center gap-4">
+                <span id="triage-stamp" class="stamp text-lg"></span>
+                <div>
+                  <div id="triage-reason-code" class="text-[11px] font-bold uppercase tracking-wider mb-0.5"></div>
+                  <p id="triage-stated-reason" class="text-sm max-w-md"></p>
+                </div>
+              </div>
+              <div class="text-right shrink-0">
+                <span class="field-label">Risk Index</span>
+                <div id="triage-risk-score" class="headline font-black text-2xl"></div>
+              </div>
+            </div>
+            <div id="triggered-rules-box" class="mt-4 pt-3 dashed-sep hidden">
+              <span class="field-label block mb-1.5">Gates Triggered</span>
+              <div id="triggered-rules-list" class="flex flex-wrap gap-1.5"></div>
+            </div>
+          </div>
+
+          <!-- Intent + grounding -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="card p-4">
+              <div class="flex items-center justify-between mb-2">
+                <span class="field-label"><i class="fa-solid fa-tag mr-1"></i>Classified Intent</span>
+                <span id="intent-latency" class="text-[10px] text-[var(--ink-soft)]"></span>
+              </div>
+              <div id="intent-label" class="headline font-bold text-base"></div>
+              <div class="mt-3">
+                <div class="flex justify-between text-xs text-[var(--ink-soft)] mb-1">
+                  <span>Confidence</span>
+                  <span id="intent-confidence-pct" class="font-bold"></span>
+                </div>
+                <div class="w-full bg-[var(--paper-2)] border border-[var(--ink)] h-2.5 overflow-hidden">
+                  <div id="intent-confidence-bar" class="h-full"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card p-4">
+              <div class="flex items-center justify-between mb-2">
+                <span class="field-label"><i class="fa-solid fa-magnifying-glass mr-1"></i>Kaggle RAG Match</span>
+                <span id="grounding-count" class="text-[10px] text-[var(--ink-soft)]"></span>
+              </div>
+              <div class="flex items-center justify-between mt-1">
+                <div>
+                  <div class="text-xs text-[var(--ink-soft)]">Top similarity</div>
+                  <div id="grounding-sim-score" class="headline font-bold text-lg"></div>
+                </div>
+                <span id="grounding-status-badge" class="text-[10px] font-bold uppercase px-2 py-1 border-2"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Draft / clarify / escalation -->
+          <div class="card p-5">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="headline font-bold flex items-center gap-2">
+                <i class="fa-solid fa-feather-pointed"></i>
+                <span id="draft-title">Drafted Reply</span>
+              </h3>
+              <span id="draft-char-badge" class="text-xs px-2 py-0.5 border border-[var(--ink)]"></span>
+            </div>
+            <div id="draft-body" class="p-4 bg-white border-2 border-[var(--ink)] text-sm leading-relaxed whitespace-pre-wrap"></div>
+            <div class="mt-4 pt-3 dashed-sep flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--ink-soft)]">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>Guardrails: PII redaction &middot; &le;280 chars &middot; whitelisted links only</span>
+              </div>
+              <div id="execution-time" class="font-bold"></div>
+            </div>
+          </div>
+
+          <!-- Citations -->
+          <div class="card p-5">
+            <h3 class="headline font-bold mb-3 flex items-center gap-2">
+              <i class="fa-solid fa-box-archive"></i> Retrieved Prior Cases
+            </h3>
+            <div id="citations-list" class="space-y-3"></div>
+          </div>
+
+        </div>
+
+        <!-- Intent confusion matrix -- whole-run diagnostic, so it sits
+             below the per-query disposition rather than competing with it
+             for the top of the page. Populated from the same
+             /api/benchmark-summary payload; hidden until real data arrives. -->
+        <div id="confusion-matrix-card" class="card p-5 hidden">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="headline font-bold text-lg"><i class="fa-solid fa-table-cells mr-1"></i> Intent Cross-Reference</h2>
+            <span class="field-label">rows = true &middot; cols = predicted</span>
+          </div>
+          <p class="text-xs text-[var(--ink-soft)] mb-3">Where each true intent class's queries actually ended up this run. A heavy off-diagonal cell in the <code>OOSA</code> column is the numeric fingerprint of the classifier-conflation issue documented in <code>docs/AUDIT_AND_FIX_PLAN.md</code> &sect;7.11.</p>
+          <div class="overflow-x-auto">
+            <table id="confusion-matrix-table" class="text-xs border-collapse w-full"></table>
+          </div>
+          <div id="confusion-matrix-legend" class="text-[10px] text-[var(--ink-soft)] mt-3 flex flex-wrap gap-x-4 gap-y-1"></div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <footer class="hard-border-t mt-10 py-6 text-center text-[10px] text-[var(--ink-soft)] field-label">
+    Hiver AI Support &amp; Triage Agent &middot; Case Desk build
+  </footer>
+
+  <script>
+    const form = document.getElementById("tweet-form");
+    const tweetText = document.getElementById("tweet-text");
+    const submitBtn = document.getElementById("submit-btn");
+    const charCount = document.getElementById("char-count");
+    const scenariosContainer = document.getElementById("scenarios-container");
+    const placeholder = document.getElementById("results-placeholder");
+    const resultsCard = document.getElementById("results-card");
+
+    tweetText.addEventListener("input", () => {
+      charCount.textContent = tweetText.value.length + " / 280 chars";
+    });
+
+    // ---------------------------------------------------------------------
+    // KPI ledger strip: populated from /api/benchmark-summary, which is
+    // written to docs/benchmark_summary.json by `python -m src.eval.runner`
+    // (see src/eval/report_generator.py's write_benchmark_summary_json).
+    // Previously these six numbers were hardcoded directly into this HTML
+    // file and had to be manually re-typed every time the eval reran with a
+    // different golden set or recalibrated threshold -- which is exactly
+    // how the dashboard ended up showing a fabricated-looking "kappa = 0.72
+    // / substantial agreement" long after the real measured kappa had
+    // dropped to 0.07. Now it always reflects whatever the most recent real
+    // run produced, and says so plainly when no run has happened yet.
+    // ---------------------------------------------------------------------
+    function fmtPct(x, digits = 1) {
+      return (typeof x === "number") ? (x * 100).toFixed(digits) + "%" : "&mdash;";
+    }
+
+    // Mirrors src/eval/report_generator.py's _abbreviate_labels() so the
+    // dashboard's confusion matrix uses the same short codes as
+    // docs/REPORT.md Section 4.1 and the terminal table -- initials of each
+    // underscore-separated word, deduped with a numeric suffix on collision.
+    function abbreviateLabels(labels) {
+      const used = new Set();
+      const abbrevs = {};
+      labels.forEach(lbl => {
+        const parts = lbl.split("_").filter(Boolean);
+        const base = (parts.map(p => p[0]).join("") || lbl.slice(0, 3)).toUpperCase();
+        let abbr = base;
+        let i = 2;
+        while (used.has(abbr)) { abbr = base + i; i++; }
+        used.add(abbr);
+        abbrevs[lbl] = abbr;
+      });
+      return abbrevs;
+    }
+
+    function renderConfusionMatrix(labels, matrix) {
+      const card = document.getElementById("confusion-matrix-card");
+      if (!labels || !labels.length || !matrix || !matrix.length) {
+        card.classList.add("hidden");
+        return;
+      }
+      card.classList.remove("hidden");
+      const abbrevs = abbreviateLabels(labels);
+      const cellStyle = "padding:0.4rem 0.6rem;border:2px solid var(--ink);text-align:center;";
+      const headStyle = cellStyle + "background:var(--paper-2);font-weight:700;";
+
+      let html = "<thead><tr>" + `<th style="${headStyle}text-align:left;">True \\ Pred</th>` +
+        labels.map(l => `<th style="${headStyle}" title="${l}">${abbrevs[l]}</th>`).join("") + "</tr></thead><tbody>";
+
+      labels.forEach((trueLabel, i) => {
+        const row = matrix[i] || [];
+        const offDiagVals = row.filter((_, j) => j !== i);
+        const rowMaxOffDiag = offDiagVals.length ? Math.max(...offDiagVals) : 0;
+        html += `<tr><th style="${headStyle}text-align:left;" title="${trueLabel}">${abbrevs[trueLabel]}</th>`;
+        labels.forEach((_, j) => {
+          const count = row[j] || 0;
+          let style = cellStyle;
+          if (i === j) {
+            style += "background:var(--stamp-green);color:var(--paper);font-weight:700;";
+          } else if (count > 0 && count === rowMaxOffDiag && count >= 2) {
+            style += "background:var(--stamp-amber);color:var(--paper);font-weight:700;";
+          }
+          html += `<td style="${style}">${count || "&middot;"}</td>`;
+        });
+        html += "</tr>";
+      });
+      html += "</tbody>";
+      document.getElementById("confusion-matrix-table").innerHTML = html;
+      document.getElementById("confusion-matrix-legend").innerHTML = labels
+        .map(l => `<span><strong>${abbrevs[l]}</strong> = ${l.replace(/_/g, " ")}</span>`).join("");
+    }
+
+    function loadBenchmarkSummary() {
+      fetch("/api/benchmark-summary")
+        .then(res => res.json())
+        .then(data => {
+          const footnote = document.getElementById("kpi-footnote");
+
+          if (!data.available) {
+            document.getElementById("kpi-triage-accuracy").textContent = "N/A";
+            document.getElementById("kpi-escalation-recall").textContent = "N/A";
+            document.getElementById("kpi-intent-f1").textContent = "N/A";
+            document.getElementById("kpi-kappa").textContent = "N/A";
+            document.getElementById("kpi-judge").textContent = "N/A";
+            document.getElementById("kpi-latency").textContent = "N/A";
+            ["kpi-triage-accuracy-sub", "kpi-escalation-recall-sub", "kpi-intent-f1-sub", "kpi-kappa-sub", "kpi-judge-sub", "kpi-latency-sub"]
+              .forEach(id => document.getElementById(id).textContent = "no run yet");
+            footnote.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1"></i> ${data.reason || "No benchmark summary found."} Run <code>python -m src.eval.runner</code>, then refresh this page.`;
+            document.getElementById("confusion-matrix-card").classList.add("hidden");
+            return;
+          }
+
+          const triage = data.triage || {};
+          const prodTriage = triage.production || {};
+          const simpleTriage = triage.simple || {};
+          const intent = (data.intent && data.intent.production) || {};
+          const judgeProd = (data.judge && data.judge.production) || {};
+          const judgeSimple = (data.judge && data.judge.simple) || {};
+          const agreement = data.human_agreement || {};
+          const gs = data.golden_set || {};
+
+          // Triage accuracy: flag honestly when the production system's
+          // blended accuracy is actually *below* the simple baseline, since
+          // that can be the correct outcome (fewer missed safety escalations
+          // at the cost of more false ones) rather than a regression to hide.
+          const triageDelta = (typeof prodTriage.accuracy === "number" && typeof simpleTriage.accuracy === "number")
+            ? (prodTriage.accuracy - simpleTriage.accuracy) * 100
+            : null;
+          document.getElementById("kpi-triage-accuracy").textContent = fmtPct(prodTriage.accuracy);
+          const triageSub = document.getElementById("kpi-triage-accuracy-sub");
+          if (triageDelta === null) {
+            triageSub.textContent = "vs simple baseline: n/a";
+            triageSub.style.color = "";
+          } else {
+            const arrow = triageDelta >= 0 ? "&uarr;" : "&darr;";
+            triageSub.innerHTML = `${arrow} ${Math.abs(triageDelta).toFixed(1)} pts vs simple baseline*`;
+            triageSub.style.color = triageDelta >= 0 ? "var(--stamp-green)" : "var(--stamp-amber)";
+          }
+
+          document.getElementById("kpi-escalation-recall").textContent = fmtPct(prodTriage.escalation_recall);
+          document.getElementById("kpi-escalation-recall").style.color = "var(--stamp-green)";
+          if (typeof prodTriage.missed_escalation_count === "number" && typeof prodTriage.total_escalations_true === "number") {
+            document.getElementById("kpi-escalation-recall-sub").textContent =
+              `${prodTriage.missed_escalation_count} / ${prodTriage.total_escalations_true} missed` +
+              (typeof simpleTriage.missed_escalation_count === "number" ? ` (vs ${simpleTriage.missed_escalation_count} / ${prodTriage.total_escalations_true} simple)` : "");
+          }
+
+          document.getElementById("kpi-intent-f1").textContent = (typeof intent.macro_f1 === "number") ? intent.macro_f1.toFixed(4) : "&mdash;";
+          document.getElementById("kpi-intent-f1-sub").textContent = (typeof intent.accuracy === "number") ? fmtPct(intent.accuracy).replace("%", "% exact accuracy") : "";
+
+          const kappa = agreement.mean_cohen_kappa;
+          document.getElementById("kpi-kappa").innerHTML = (typeof kappa === "number") ? ("&kappa; " + kappa.toFixed(2)) : "undefined";
+          const kappaSub = document.getElementById("kpi-kappa-sub");
+          const interp = (agreement.agreement_interpretation || "").toLowerCase();
+          kappaSub.textContent = agreement.agreement_interpretation
+            ? (interp.includes("substantial") || interp.includes("almost perfect") ? agreement.agreement_interpretation : agreement.agreement_interpretation + " -- judge not fully trusted")
+            : "not measured";
+          kappaSub.style.color = (typeof kappa === "number" && kappa < 0.61) ? "var(--stamp-red)" : "var(--ink-soft)";
+          kappaSub.classList.toggle("font-bold", typeof kappa === "number" && kappa < 0.61);
+
+          document.getElementById("kpi-judge").textContent = (typeof judgeProd.overall_score === "number") ? judgeProd.overall_score.toFixed(1) + " / 5" : "&mdash;";
+          if (typeof judgeProd.overall_score === "number" && typeof judgeSimple.overall_score === "number") {
+            const judgeDelta = judgeProd.overall_score - judgeSimple.overall_score;
+            const jSub = document.getElementById("kpi-judge-sub");
+            jSub.innerHTML = `${judgeDelta >= 0 ? "&uarr;" : "&darr;"} ${Math.abs(judgeDelta).toFixed(1)} vs simple baseline`;
+            jSub.style.color = judgeDelta >= 0 ? "var(--stamp-green)" : "var(--stamp-amber)";
+          }
+
+          const p95 = data.latency_ms && data.latency_ms.p95_production;
+          document.getElementById("kpi-latency").textContent = (typeof p95 === "number") ? p95.toFixed(1) + "ms" : "n/a";
+          document.getElementById("kpi-latency-sub").textContent = (typeof p95 === "number") ? "measured, this run" : "no timings recorded";
+
+          renderConfusionMatrix(intent.labels, intent.confusion_matrix);
+
+          const generatedAt = data.generated_at ? new Date(data.generated_at).toLocaleString() : "unknown time";
+          footnote.innerHTML = `* Triage Accuracy trades against escalation safety on purpose when it reads below baseline: fewer missed real hazards can cost more false escalations. See <code>docs/REPORT.md</code> &sect;5 for the full write-up. Live from <code>docs/benchmark_summary.json</code> &middot; ${gs.n || "?"}-row golden set &middot; generated ${generatedAt}.`;
+        })
+        .catch(err => {
+          console.error("Error loading benchmark summary:", err);
+          document.getElementById("kpi-footnote").textContent = "Could not load benchmark summary from /api/benchmark-summary.";
+        });
+    }
+    loadBenchmarkSummary();
+
+    fetch("/api/scenarios")
+      .then(res => res.json())
+      .then(scenarios => {
+        scenariosContainer.innerHTML = scenarios.map((s, idx) => `
+          <button type="button" onclick="loadScenario(${idx})" class="w-full text-left p-3 bg-white border-2 border-[var(--ink)] hover:bg-[var(--paper-2)] transition group">
+            <div class="flex items-center justify-between mb-1 gap-2">
+              <span class="text-xs font-bold">${s.title}</span>
+              <span class="text-[10px] px-2 py-0.5 border font-bold uppercase shrink-0 ${s.expected.startsWith('AUTO') ? 'border-[var(--stamp-green)] text-[var(--stamp-green)]' : (s.expected.startsWith('CLARIFY') ? 'border-[var(--stamp-amber)] text-[var(--stamp-amber)]' : 'border-[var(--stamp-red)] text-[var(--stamp-red)]')}">${s.expected}</span>
+            </div>
+            <p class="text-[11px] text-[var(--ink-soft)] line-clamp-1">${s.text}</p>
+          </button>
+        `).join("");
+        window._scenarios = scenarios;
+      })
+      .catch(err => console.error("Error loading scenarios:", err));
+
+    window.loadScenario = function(idx) {
+      if (!window._scenarios || !window._scenarios[idx]) return;
+      const s = window._scenarios[idx];
+      tweetText.value = s.text;
+      tweetText.dispatchEvent(new Event("input"));
+      submitQuery(s.text);
+    };
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = tweetText.value.trim();
+      if (!text) return;
+      submitQuery(text);
+    });
+
+    async function submitQuery(text) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> FILING...';
+
+      try {
+        const res = await fetch("/api/process", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: text })
+        });
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        const data = await res.json();
+        renderResults(data);
+      } catch (err) {
+        alert("Error processing query: " + err.message);
+        console.error(err);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fa-solid fa-stamp"></i> FILE CASE';
+      }
+    }
+
+    // Central config for the three possible triage actions -- the previous
+    // dashboard only branched on "AUTO_HANDLE vs everything else", so a
+    // CLARIFY decision (a real third action defined in src/models.py) fell
+    // into the escalation branch and was mislabeled "ESCALATE TO HUMAN
+    // AGENT" even though drafted_reply for CLARIFY is actually the
+    // clarifying question src/pipeline.py generates, not a null/suppressed
+    // reply. This table makes all three states explicit and correct.
+    const ACTION_STYLE = {
+      AUTO_HANDLE: {
+        stamp: "CLEARED",
+        color: "var(--stamp-green)",
+        draftTitle: "Proposed Grounded Reply",
+      },
+      CLARIFY: {
+        stamp: "CLARIFY",
+        color: "var(--stamp-amber)",
+        draftTitle: "Clarifying Question Sent to Customer",
+      },
+      ESCALATE: {
+        stamp: "ESCALATED",
+        color: "var(--stamp-red)",
+        draftTitle: "Human Agent Escalation Routing",
+      },
+    };
+
+    // Real regression: every ESCALATE case used to render the identical
+    // banner "Automated reply suppressed for safety / policy." regardless of
+    // WHY it escalated -- so a mundane low-confidence-classification or
+    // low-retrieval-grounding case (neither of which is a safety hazard)
+    // displayed exactly the same alarming "safety" wording as an actual
+    // detected battery-swelling/PII/prompt-injection hazard. A user reported
+    // a plain battery-percentage question getting "flagged as a safety
+    // issue," which traced back to this: the reason_code shown just below
+    // the banner was accurate (e.g. LOW_CONFIDENCE_AMBIGUOUS or
+    // UNGROUNDED_GENERATION), but the banner text above it overstated every
+    // escalation as a safety flag. Only these reason codes represent an
+    // actual detected hazard/security/integrity risk; everything else is a
+    // quality/confidence/policy routing decision and should say so.
+    const HAZARD_REASON_CODES = new Set([
+      "HARDWARE_PHYSICAL_DAMAGE",
+      "PII_SECURITY_SENSITIVE",
+      "PROMPT_INJECTION_SUSPECTED",
+      "PII_ECHO_IN_DRAFT",
+      "UNSAFE_ADVICE_BLOCKED",
+    ]);
+
+    function renderResults(data) {
+      placeholder.classList.add("hidden");
+      resultsCard.classList.remove("hidden");
+
+      const action = data.triage.action;
+      const style = ACTION_STYLE[action] || ACTION_STYLE.ESCALATE;
+
+      const stampEl = document.getElementById("triage-stamp");
+      stampEl.textContent = style.stamp;
+      stampEl.style.color = style.color;
+
+      const reasonCodeEl = document.getElementById("triage-reason-code");
+      reasonCodeEl.style.color = style.color;
+      reasonCodeEl.textContent = data.triage.reason_code
+        ? data.triage.reason_code
+        : (action === "AUTO_HANDLE" ? "NO ESCALATION SIGNAL" : action);
+
+      document.getElementById("triage-stated-reason").textContent = data.triage.stated_reason;
+
+      const riskEl = document.getElementById("triage-risk-score");
+      riskEl.textContent = Math.round((data.triage.risk_score || 0) * 100) + "%";
+      riskEl.style.color = style.color;
+
+      const triggeredRulesBox = document.getElementById("triggered-rules-box");
+      const triggeredRulesList = document.getElementById("triggered-rules-list");
+      if (data.triage.triggered_rules && data.triage.triggered_rules.length > 0) {
+        triggeredRulesBox.classList.remove("hidden");
+        triggeredRulesList.innerHTML = data.triage.triggered_rules.map(r => `
+          <span class="text-[11px] font-bold px-2 py-0.5 border-2" style="border-color:${style.color};color:${style.color}">${r}</span>
+        `).join("");
+      } else {
+        triggeredRulesBox.classList.add("hidden");
+      }
+
+      document.getElementById("intent-label").textContent = (data.intent.primary_intent || "").replace(/_/g, " ");
+      const confPct = Math.round((data.intent.confidence || 0) * 100);
+      document.getElementById("intent-confidence-pct").textContent = confPct + "%";
+      const bar = document.getElementById("intent-confidence-bar");
+      bar.style.width = confPct + "%";
+      bar.style.background = confPct >= 75 ? "var(--stamp-green)" : (confPct >= 60 ? "var(--stamp-amber)" : "var(--stamp-red)");
+      document.getElementById("intent-latency").textContent = (data.execution_time_ms || 0).toFixed(1) + " ms";
+
+      const maxSim = data.grounding_context ? (data.grounding_context.max_similarity || 0) : 0;
+      document.getElementById("grounding-sim-score").textContent = (maxSim * 100).toFixed(1) + "%";
+      const badge = document.getElementById("grounding-status-badge");
+      if (maxSim >= 0.50) {
+        badge.style.borderColor = "var(--stamp-green)";
+        badge.style.color = "var(--stamp-green)";
+        badge.textContent = "Grounded";
+      } else {
+        badge.style.borderColor = "var(--stamp-amber)";
+        badge.style.color = "var(--stamp-amber)";
+        badge.textContent = "Low Similarity";
+      }
+      const citeCount = data.grounding_context && data.grounding_context.citations ? data.grounding_context.citations.length : 0;
+      document.getElementById("grounding-count").textContent = citeCount + " match" + (citeCount === 1 ? "" : "es");
+
+      const draftBody = document.getElementById("draft-body");
+      const draftTitle = document.getElementById("draft-title");
+      const draftBadge = document.getElementById("draft-char-badge");
+      draftTitle.textContent = style.draftTitle;
+
+      if (action === "ESCALATE") {
+        const isHazard = HAZARD_REASON_CODES.has(data.triage.reason_code);
+        const bannerText = isHazard
+          ? "Automated reply suppressed -- detected safety/security hazard."
+          : "Automated reply withheld -- confidence/quality threshold not met.";
+        const bannerIcon = isHazard ? "fa-lock" : "fa-user-shield";
+        draftBody.innerHTML = `<div class="font-bold mb-1" style="color:${style.color}"><i class="fa-solid ${bannerIcon} text-xs mr-1"></i> ${bannerText}</div><div class="text-[var(--ink-soft)] text-xs">Dispatched to Tier-2 human support. Stated reason: <strong>${data.triage.stated_reason}</strong></div>`;
+        draftBadge.textContent = "Suppressed";
+      } else if (data.drafted_reply) {
+        draftBody.textContent = data.drafted_reply;
+        draftBadge.textContent = data.drafted_reply.length + " chars";
+      } else {
+        draftBody.innerHTML = `<div class="text-[var(--ink-soft)] text-xs">No reply text was produced for this case.</div>`;
+        draftBadge.textContent = "—";
+      }
+      document.getElementById("execution-time").textContent = "Turnaround: " + (data.execution_time_ms || 0).toFixed(1) + " ms";
+
+      const citationsList = document.getElementById("citations-list");
+      if (data.grounding_context && data.grounding_context.citations && data.grounding_context.citations.length > 0) {
+        citationsList.innerHTML = data.grounding_context.citations.map(c => `
+          <div class="p-3 bg-white border-2 border-[var(--ink)] text-xs">
+            <div class="flex items-center justify-between text-[var(--ink-soft)] mb-1">
+              <span class="font-bold">${c.tweet_id}</span>
+              <span class="text-[10px] font-bold">${(c.similarity_score * 100).toFixed(1)}% match</span>
+            </div>
+            <p class="mb-1.5 font-bold">Customer: "${c.customer_text}"</p>
+            <p class="text-[var(--ink-soft)]">Agent resolution: "${c.agent_reply}"</p>
+          </div>
+        `).join("");
+      } else {
+        citationsList.innerHTML = '<div class="text-[var(--ink-soft)] text-xs py-2">No historical citations matched above the similarity threshold.</div>';
+      }
+    }
+  </script>
+</body>
+</html>

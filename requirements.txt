@@ -1,0 +1,21 @@
+pydantic>=2.5.0
+fastapi>=0.110.0
+uvicorn>=0.29.0
+sentence-transformers>=2.2.2
+chromadb>=0.4.22
+scikit-learn>=1.3.0
+typer>=0.9.0
+rich>=13.7.0
+pytest>=7.4.0
+python-dotenv>=1.0.0
+# Migrated off google-generativeai (fully deprecated -- see the note in
+# src/drafting/generator.py) to google-genai, which supports
+# thinking_config=ThinkingConfig(thinking_budget=0). That's the real fix for
+# a truncated-reply bug: gemini-2.5-flash and gemini-3.6-flash both spent
+# their whole output-token budget on internal "thinking" before writing the
+# visible answer under the old SDK, which has no way to disable that.
+google-genai>=1.0.0
+duckdb>=0.9.0
+pandas>=2.0.0
+rouge-score>=0.1.2
+numpy>=1.24.0
