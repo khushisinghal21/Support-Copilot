@@ -2,6 +2,13 @@
 # this GitHub repo -> Render reads this file and creates the service below.
 # You'll be prompted once for GEMINI_API_KEY (kept as a Render secret, never
 # committed here). Everything else is preconfigured.
+#
+# NOTE: if your service was created via "New + -> Web Service" (picking the
+# repo directly) rather than "New + -> Blueprint", Render does NOT read this
+# file automatically -- the Build Command and every env var below must also
+# be set by hand in that service's Settings/Environment tabs on the Render
+# dashboard, or they have no effect at all. This file is kept accurate as
+# the source of truth either way.
 services:
   - type: web
     name: hiver-ai-support-agent
@@ -30,3 +37,13 @@ services:
         value: gemini
       - key: ENABLE_LIVE_LINK_CHECK
         value: "true"
+      # Caps how many historical records HistoricalVectorStore indexes on its
+      # one-time cold-start build (default is 800, used locally). That
+      # indexing happens synchronously inside the FIRST real /api/process
+      # request (lazy pipeline construction), and on this plan's 512MB limit,
+      # embedding+indexing 800 records on top of torch/chromadb's own
+      # footprint was a real contributor to out-of-memory crashes even after
+      # switching to CPU-only torch. 150 is a disclosed trade-off (a smaller,
+      # less diverse RAG corpus) in exchange for fitting the free tier.
+      - key: RAG_CORPUS_MAX_RECORDS
+        value: "150"

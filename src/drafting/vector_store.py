@@ -3,7 +3,7 @@
 import json
 import logging
 from typing import List, Dict, Optional
-from src.config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL_NAME, KAGGLE_PAIRS_PATH, GOLDEN_SET_PATH
+from src.config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL_NAME, KAGGLE_PAIRS_PATH, GOLDEN_SET_PATH, RAG_CORPUS_MAX_RECORDS
 from src.drafting.historical_data import HISTORICAL_APPLE_RESOLUTIONS
 from src.data.heuristic_intent import heuristic_intent
 
@@ -33,7 +33,7 @@ def _golden_set_source_ids() -> set:
     return ids
 
 
-def load_real_corpus(max_records: int = 800) -> List[Dict[str, str]]:
+def load_real_corpus(max_records: int = RAG_CORPUS_MAX_RECORDS) -> List[Dict[str, str]]:
     """Loads the real Kaggle-extracted @AppleSupport pairs for RAG indexing,
     excluding anything used in the golden evaluation set (leakage guard) and
     re-tagging intent with the independent heuristic rather than trusting the

@@ -79,6 +79,17 @@ MAX_TWEET_CHARS: int = 280
 # on network access.
 ENABLE_LIVE_LINK_CHECK: bool = os.getenv("ENABLE_LIVE_LINK_CHECK", "false").lower() == "true"
 
+# RAG corpus size cap for HistoricalVectorStore's one-time cold-start indexing
+# (src/drafting/vector_store.py's load_real_corpus()). Defaults to 800 for
+# local dev/eval, matching how the system was actually built and tested.
+# Overridden lower (see render.yaml) on memory-constrained deploys: encoding
+# and indexing hundreds of records happens synchronously inside the FIRST
+# real request (lazy pipeline construction), and on a 512MB host that one-time
+# peak -- on top of torch/chromadb's own footprint -- was a real contributor
+# to out-of-memory crashes. A smaller RAG corpus is a disclosed trade-off
+# (fewer/less-diverse retrieved examples), not a silent one.
+RAG_CORPUS_MAX_RECORDS: int = int(os.getenv("RAG_CORPUS_MAX_RECORDS", "800"))
+
 # Embedding & LLM Configuration
 EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "gemini")  # "gemini" or "mock"

@@ -4,6 +4,8 @@ An AI agent that reads a customer's tweet, decides what they need, drafts a repl
 
 > *Confident when it's right. Honest when it isn't. Never fabricates, never leaks, never pretends to be sure.*
 
+**Live demo**: [hiver-ai-support-agent.onrender.com](https://hiver-ai-support-agent.onrender.com/) -- hosted on Render's free tier, so the *first* query after a period of inactivity can take 30-60s (cold start: the instance spins down when idle, then has to load the embedding model and index the historical corpus from scratch). Every query after that is fast. Not a bug, just the honest cost of the free tier.
+
 Built and evaluated on real `@AppleSupport` conversations from Kaggle's `customer-support-on-twitter` dataset.
 
 ---
