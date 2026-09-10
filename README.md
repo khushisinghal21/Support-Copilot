@@ -2,6 +2,8 @@
 
 An AI agent that reads a customer's tweet, decides what they need, drafts a reply grounded in how `@AppleSupport` has actually resolved similar issues before, and decides whether to send that reply automatically or hand the ticket to a human -- with a stated reason either way.
 
+> *Confident when it's right. Honest when it isn't. Never fabricates, never leaks, never pretends to be sure.*
+
 Built and evaluated on real `@AppleSupport` conversations from Kaggle's `customer-support-on-twitter` dataset.
 
 ---

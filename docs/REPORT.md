@@ -6,6 +6,8 @@
 **Golden Evaluation Set**: 188 Hand-Labelled Test Queries (38 disclosed edge cases, ~20%)
 **Status**: Formal Evaluation & Verification Sign-Off
 
+> *Confident when it's right. Honest when it isn't. Never fabricates, never leaks, never pretends to be sure.*
+
 ---
 
 > **TL;DR**: An AI triage agent for @AppleSupport that drafts grounded replies and escalates to a human -- with a stated reason -- whenever it isn't confident. It beats a simple TF-IDF baseline on intent accuracy (+10.1 pts) and safety recall (93.8% vs. 25%), but its own LLM judge is only weakly validated against humans (kappa = 0.07). That's disclosed up front, not buried: see Section 3 for the number and Section 5 for what it means. Full baselines, five concrete failure modes, and next steps are below.
@@ -162,7 +164,7 @@ The dashboard renders this same matrix live against the current run, alongside t
 While our **Macro-F1 of 0.5587** and **Triage Accuracy of 60.1%** may look strong in isolation, headline numbers conceal subtle real-world failure patterns -- and, per Section 3, the human-agreement kappa on the judge itself is currently weak, which should temper confidence in any of the judge-derived numbers above:
 
 1. **The Golden Set's Escalation Rate Is Deliberately ~20x the Real Rate**:
-   Of the 32 true-ESCALATE rows in this 188-row golden set (~17%), the large majority were manually reviewed and, in several cases, authored as adversarial examples (`source: authored_adversarial` in `data/golden_eval_set.jsonl`) -- because an unweighted random sample of the real Kaggle pairs surfaced only ~9 genuine escalation-worthy tweets out of 995 (well under 1%). This oversampling was a deliberate, disclosed choice (see `data/README.md`) to get enough escalation examples to measure precision/recall at all -- but it means Escalation Recall/Precision above describe performance on an escalation-enriched sample, not the real-world base rate. On real unfiltered traffic, the same false-escalation rules would fire far less often in absolute terms, and the cost of a single missed escalation (safety-relevant) is not comparable to the cost of a single false one (ticket volume) -- a blended "Triage Accuracy" number hides that asymmetry entirely.
+   A random sample of real Kaggle pairs turns up only ~9 genuine escalation-worthy tweets per 995 (well under 1%) -- nowhere near enough to measure precision/recall. So the 32 true-ESCALATE rows here (~17% of the set) are deliberately oversampled and, in several cases, authored (`source: authored_adversarial`, disclosed in `data/README.md`). That means Escalation Recall/Precision above describe an escalation-enriched sample, not real-world traffic -- on unfiltered traffic the same rules would fire far less often, and a missed escalation (safety-relevant) and a false one (ticket volume) don't cost the same thing. A single blended "Triage Accuracy" number hides that asymmetry entirely.
 
 2. **Isolated Single-Turn Evaluation**:
    Our evaluation measures single-turn tweet resolution. Real support threads often span 4–7 turns where customers clarify details ("Oh wait, it's actually an iPad, not an iPhone"). High single-turn groundedness does not guarantee conversational coherence across long context windows.
