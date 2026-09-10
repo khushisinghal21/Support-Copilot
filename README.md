@@ -47,7 +47,7 @@ Two examples end to end:
 ## Running it
 
 ```bash
-git clone https://github.com/nanthitha25/hiver_assignment.git
+git clone [https://github.com/nanthitha25/hiver_assignment.git](https://github.com/khushisinghal21/Support-Copilot.git)
 cd hiver_assignment
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
