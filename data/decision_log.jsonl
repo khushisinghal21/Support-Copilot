@@ -804,3 +804,4 @@
 {"tweet_id": "web_1789071871323", "intent": "HARDWARE_AND_BATTERY", "intent_confidence": 0.781, "triage_action": "ESCALATE", "triage_reason_code": "UNVERIFIED_LINK_IN_DRAFT", "risk_score": 0.85, "execution_time_ms": 12871.63}
 {"tweet_id": "web_1789072340709", "intent": "HARDWARE_AND_BATTERY", "intent_confidence": 0.781, "triage_action": "AUTO_HANDLE", "triage_reason_code": null, "risk_score": 0.1, "execution_time_ms": 1943.48}
 {"tweet_id": "web_1789072430156", "intent": "HARDWARE_AND_BATTERY", "intent_confidence": 0.7416, "triage_action": "AUTO_HANDLE", "triage_reason_code": null, "risk_score": 0.1, "execution_time_ms": 11247.14}
+{"tweet_id": "web_1789076663100", "intent": "OUT_OF_SCOPE_AMBIGUOUS", "intent_confidence": 0.8938, "triage_action": "ESCALATE", "triage_reason_code": "LOW_CONFIDENCE_AMBIGUOUS", "risk_score": 0.7, "execution_time_ms": 3647.4}
