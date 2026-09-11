@@ -48,7 +48,9 @@ def _append_decision_log(response: SupportResponse) -> None:
 
 
 class SupportPipeline:
-    """Orchestrates ingestion, classification, RAG retrieval, reply generation, and triage."""
+    """Orchestrates the pipeline in safety-first order: classification, input-side
+    triage gates, and only then RAG retrieval, reply generation, and the
+    output-side gates. See src/triage/engine.py for why the split exists."""
 
     def __init__(
         self,
@@ -70,22 +72,48 @@ class SupportPipeline:
             # 1. Intent Classification
             intent_res: IntentResult = self.intent_classifier.predict(tweet.text)
 
-            # 2. Historical Retrieval (RAG)
+            # 2. Input-side safety gates (triage gates 1-5), BEFORE any retrieval
+            #    or generation. This ordering is the point, not an optimisation:
+            #    gate 1 exists to stop a prompt-injection tweet from reaching the
+            #    model, and it cannot do that if the model has already been called.
+            #    It also means a hazard / PII / human-request / frustration ticket
+            #    no longer pays for an LLM call whose output is then discarded.
+            #    This is the order README.md's flow diagram always claimed; until
+            #    this change the code ran classify -> retrieve -> generate -> triage
+            #    and contradicted it.
+            input_decision: Optional[TriageDecision] = self.triage_engine.evaluate_input(tweet)
+            if input_decision is not None:
+                duration_ms = (time.perf_counter() - start_time) * 1000.0
+                response = SupportResponse(
+                    tweet_id=tweet.tweet_id,
+                    intent=intent_res,
+                    triage=input_decision,
+                    # No draft exists and none should: nothing was generated.
+                    # grounding_context is None for the same reason -- claiming a
+                    # retrieval result here would be inventing one.
+                    drafted_reply=None,
+                    grounding_context=None,
+                    execution_time_ms=round(duration_ms, 2),
+                )
+                _append_decision_log(response)
+                return response
+
+            # 3. Historical Retrieval (RAG)
             rag_res: RetrievalResult = self.retriever.retrieve(
                 query=tweet.text,
                 intent=intent_res.primary_intent.value,
                 k=3,
             )
 
-            # 3. Grounded Reply Drafting
+            # 4. Grounded Reply Drafting
             drafted_reply, guardrail_passed, violations = self.reply_generator.generate(
                 tweet=tweet.text,
                 intent=intent_res.primary_intent.value,
                 retrieval_result=rag_res,
             )
 
-            # 4. Triage & Escalation Decision
-            triage_res: TriageDecision = self.triage_engine.evaluate(
+            # 5. Output-side gates (triage gates 6-9) on the draft that now exists.
+            triage_res: TriageDecision = self.triage_engine.evaluate_output(
                 tweet=tweet,
                 intent_res=intent_res,
                 rag_res=rag_res,

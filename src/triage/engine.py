@@ -6,6 +6,28 @@ queries (see AppleIntentEnum/TriageAction docstrings for the real historical
 case that motivated it), and reason-code-specific handling of guardrail
 violations (PII echoed back, unsafe advice, ungrounded generation) instead of
 a single generic GENERATION_GUARDRAIL_FAILED bucket.
+
+The cascade is split into two phases, which is a correctness fix rather than a
+refactor for taste. Gates 1-5 depend only on the raw customer text, so they can
+and must run BEFORE retrieval and generation:
+
+  * evaluate_input()  -- gates 1-5 (prompt injection, hardware hazard, PII,
+    human request, frustration/fraud). Returns None when nothing fires, i.e.
+    "this ticket is safe to spend a retrieval and an LLM call on".
+  * evaluate_output() -- gates 6, 6b, 7, 8, 9 (intent-confidence floor, CLARIFY
+    band, retrieval similarity, generation guardrails, AUTO_HANDLE clearance).
+    These need a draft and/or retrieval results, so they necessarily run after.
+  * evaluate()        -- unchanged public behaviour: input gates then output
+    gates, in the original order. Kept so existing callers and tests keep
+    working.
+
+Before the split, src/pipeline.py ran classify -> retrieve -> generate -> triage,
+which meant a prompt-injection tweet was interpolated into the Gemini prompt and
+reached the model BEFORE gate 1 -- the gate whose entire job is to stop that --
+and every hazard/PII/human-request ticket paid for an LLM call whose output
+triage then threw away. README.md's flow diagram had always shown the safety gate
+first; the code did not match the diagram. Gate order and every reason code are
+preserved exactly as they were.
 """
 
 from typing import List, Optional
@@ -65,18 +87,15 @@ class TriageEngine:
         self.rule_matcher = RuleMatcher()
         self.sentiment_analyzer = SentimentAnalyzer()
 
-    def evaluate(
-        self,
-        tweet: TweetInput,
-        intent_res: IntentResult,
-        rag_res: Optional[RetrievalResult] = None,
-        drafted_reply: Optional[str] = None,
-        guardrail_passed: bool = True,
-        guardrail_violations: Optional[List[str]] = None,
-    ) -> TriageDecision:
-        """Executes cascading priority gates to determine AUTO_HANDLE / ESCALATE / CLARIFY."""
+    def evaluate_input(self, tweet: TweetInput) -> Optional[TriageDecision]:
+        """Runs the input-side gates (1-5) on the raw customer text alone.
+
+        Returns a TriageDecision when a gate fires -- in which case the caller
+        must NOT retrieve or generate, because the whole point of these gates is
+        that this ticket should never reach the model -- or None when the text is
+        clean enough to proceed to retrieval and drafting.
+        """
         text = tweet.text
-        guardrail_violations = guardrail_violations or []
 
         # Gate 1: Prompt injection targeting the AI drafting step. Checked
         # first and independent of tone/sentiment -- an injection attempt can
@@ -148,6 +167,30 @@ class TriageEngine:
                 risk_score=frustration_score,
                 triggered_rules=sentiment_markers,
             )
+
+        # Nothing on the input side fired: this ticket is safe to spend a
+        # retrieval and a generation call on. The remaining gates live in
+        # evaluate_output() because they need a draft and/or retrieval results.
+        return None
+
+    def evaluate_output(
+        self,
+        tweet: TweetInput,
+        intent_res: IntentResult,
+        rag_res: Optional[RetrievalResult] = None,
+        drafted_reply: Optional[str] = None,
+        guardrail_passed: bool = True,
+        guardrail_violations: Optional[List[str]] = None,
+    ) -> TriageDecision:
+        """Runs the output-side gates (6, 6b, 7, 8, 9) after drafting.
+
+        `drafted_reply` is accepted but deliberately unread here: the draft's own
+        content is validated by src/drafting/guardrails.py, whose verdict arrives
+        as guardrail_passed / guardrail_violations. Keeping the parameter means
+        callers don't have to know that.
+        """
+        text = tweet.text
+        guardrail_violations = guardrail_violations or []
 
         # Gate 6: Intent Uncertainty / Ambiguous Topic (hard floor)
         if intent_res.primary_intent == AppleIntentEnum.OUT_OF_SCOPE_AMBIGUOUS or intent_res.confidence < self.min_intent_confidence:
@@ -225,4 +268,32 @@ class TriageEngine:
             reason_code=None,
             risk_score=0.10,
             triggered_rules=[],
+        )
+
+    def evaluate(
+        self,
+        tweet: TweetInput,
+        intent_res: IntentResult,
+        rag_res: Optional[RetrievalResult] = None,
+        drafted_reply: Optional[str] = None,
+        guardrail_passed: bool = True,
+        guardrail_violations: Optional[List[str]] = None,
+    ) -> TriageDecision:
+        """Full cascade in the original order: input gates, then output gates.
+
+        Retained unchanged for callers that already have a draft in hand (and for
+        the existing test suite). src/pipeline.py deliberately does NOT use this
+        -- it calls evaluate_input() early so it can skip retrieval and
+        generation entirely when an input gate fires.
+        """
+        input_decision = self.evaluate_input(tweet)
+        if input_decision is not None:
+            return input_decision
+        return self.evaluate_output(
+            tweet=tweet,
+            intent_res=intent_res,
+            rag_res=rag_res,
+            drafted_reply=drafted_reply,
+            guardrail_passed=guardrail_passed,
+            guardrail_violations=guardrail_violations,
         )

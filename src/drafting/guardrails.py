@@ -5,10 +5,14 @@ Extends the original three checks (length / PII solicitation / URL whitelist)
 with three safety-motivated additions from the audit:
 
   - PII echo: don't repeat the customer's own PII back in the draft. Belt-
-    and-suspenders on top of the input-side PII gate in the triage engine --
-    useful because drafting currently runs before triage in the pipeline
-    (src/pipeline.py), and because a source of PII the input regex misses
-    could still leak if it ends up quoted in the reply.
+    and-suspenders on top of the input-side PII gate in the triage engine.
+    The original reason given here was that "drafting currently runs before
+    triage in the pipeline" -- that is no longer true (src/pipeline.py now runs
+    triage gates 1-5, PII included, before retrieval or generation; see
+    src/triage/engine.py's module docstring). The check stays, for the reason
+    that always mattered more: a source of PII the input regex misses can still
+    end up quoted in the reply, and an input gate cannot catch what it did not
+    recognise. Defence in depth, not redundancy.
   - Unsafe advice: block DIY instructions (puncturing a battery, jailbreaking,
     opening the device casing) regardless of whether they came from an LLM
     or a retrieved historical snippet.
