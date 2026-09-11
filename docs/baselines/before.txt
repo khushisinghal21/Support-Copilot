@@ -1,0 +1,191 @@
+=== BASELINE: pytest tests/ -v ===
+captured 2026-09-11T11:48:27Z | commit 4c5dd1e
+
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0 -- /root/scvenv/bin/python
+cachedir: .pytest_cache
+rootdir: /root/sc
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collecting ... collected 91 items
+
+tests/test_drafting.py::test_retriever_returns_relevant_battery_resolutions PASSED [  1%]
+tests/test_drafting.py::test_retriever_returns_wifi_resolutions PASSED   [  2%]
+tests/test_drafting.py::test_guardrail_length_pass_and_fail PASSED       [  3%]
+tests/test_drafting.py::test_guardrail_catches_pii_solicitation PASSED   [  4%]
+tests/test_drafting.py::test_guardrail_url_whitelisting PASSED           [  5%]
+tests/test_drafting.py::test_generator_drafts_safe_reply PASSED          [  6%]
+tests/test_drafting.py::test_guardrail_rejects_short_incomplete_draft PASSED [  7%]
+tests/test_drafting.py::test_guardrail_accepts_normal_length_reply PASSED [  8%]
+tests/test_drafting.py::test_generator_discards_max_tokens_truncated_output PASSED [  9%]
+tests/test_drafting.py::test_generator_discards_suspiciously_short_stop_output PASSED [ 10%]
+tests/test_drafting.py::test_generator_accepts_complete_llm_output PASSED [ 12%]
+tests/test_eval.py::test_golden_dataset_schema PASSED                    [ 13%]
+tests/test_eval.py::test_human_judge_agreement_calibration PASSED        [ 14%]
+tests/test_eval.py::test_report_file_generation PASSED                   [ 15%]
+tests/test_eval.py::test_write_benchmark_summary_json_schema PASSED      [ 16%]
+tests/test_eval.py::test_abbreviate_labels_are_unique_and_short PASSED   [ 17%]
+tests/test_eval.py::test_render_confusion_matrix_markdown_is_a_valid_table PASSED [ 18%]
+tests/test_eval.py::test_render_confusion_matrix_markdown_handles_empty_input PASSED [ 19%]
+tests/test_eval.py::test_generate_markdown_report_includes_confusion_matrix_section PASSED [ 20%]
+tests/test_eval.py::test_generate_markdown_report_uses_real_latency_not_hardcoded_estimate PASSED [ 21%]
+tests/test_eval.py::test_write_benchmark_summary_json_handles_undefined_kappa PASSED [ 23%]
+tests/test_eval.py::test_benchmark_summary_endpoint_reports_unavailable_when_no_run_yet PASSED [ 24%]
+tests/test_eval.py::test_benchmark_summary_endpoint_serves_real_file PASSED [ 25%]
+tests/test_hardening.py::test_negated_battery_hazard_does_not_escalate PASSED [ 26%]
+tests/test_hardening.py::test_genuine_battery_hazard_still_escalates PASSED [ 27%]
+tests/test_hardening.py::test_negated_smoke_does_not_escalate PASSED     [ 28%]
+tests/test_hardening.py::test_case_number_does_not_match_phone_regex PASSED [ 29%]
+tests/test_hardening.py::test_real_phone_number_with_separators_still_detected PASSED [ 30%]
+tests/test_hardening.py::test_prompt_injection_detected PASSED           [ 31%]
+tests/test_hardening.py::test_ordinary_text_not_flagged_as_injection PASSED [ 32%]
+tests/test_hardening.py::test_engine_escalates_prompt_injection_before_any_other_gate PASSED [ 34%]
+tests/test_hardening.py::test_reporting_a_scam_not_victimized_does_not_escalate PASSED [ 35%]
+tests/test_hardening.py::test_corroborated_fraud_claim_does_escalate PASSED [ 36%]
+tests/test_hardening.py::test_genuine_account_compromise_always_escalates PASSED [ 37%]
+tests/test_hardening.py::test_pii_echo_blocked PASSED                    [ 38%]
+tests/test_hardening.py::test_no_pii_in_draft_passes PASSED              [ 39%]
+tests/test_hardening.py::test_unsafe_advice_blocked PASSED               [ 40%]
+tests/test_hardening.py::test_safe_advice_passes PASSED                  [ 41%]
+tests/test_hardening.py::test_ungrounded_draft_fails_grounding_check PASSED [ 42%]
+tests/test_hardening.py::test_grounded_draft_passes_grounding_check PASSED [ 43%]
+tests/test_hardening.py::test_clarify_fires_on_ambiguous_device_moderate_confidence PASSED [ 45%]
+tests/test_hardening.py::test_clarify_does_not_fire_when_device_is_named PASSED [ 46%]
+tests/test_hardening.py::test_clarify_does_not_fire_when_device_has_attached_model_number PASSED [ 47%]
+tests/test_hardening.py::test_mentions_device_handles_attached_model_numbers PASSED [ 48%]
+tests/test_hardening.py::test_clarify_does_not_fire_for_device_independent_intent PASSED [ 49%]
+tests/test_intent.py::test_majority_baseline_classifier PASSED           [ 50%]
+tests/test_intent.py::test_simple_tfidf_classifier PASSED                [ 51%]
+tests/test_intent.py::test_semantic_classifier_hardware_intent PASSED    [ 52%]
+tests/test_intent.py::test_semantic_classifier_account_intent PASSED     [ 53%]
+tests/test_intent.py::test_semantic_classifier_software_intent PASSED    [ 54%]
+tests/test_intent.py::test_semantic_classifier_how_to_intent PASSED      [ 56%]
+tests/test_intent.py::test_semantic_classifier_ambiguous_fallback PASSED [ 57%]
+tests/test_intent.py::test_semantic_classifier_latency PASSED            [ 58%]
+tests/test_intent_taxonomy.py::test_every_intent_has_prototypes_and_a_description PASSED [ 59%]
+tests/test_intent_taxonomy.py::test_no_duplicate_prototypes_within_a_class PASSED [ 60%]
+tests/test_intent_taxonomy.py::test_hardware_and_battery_covers_update_triggered_battery_drain PASSED [ 61%]
+tests/test_intent_taxonomy.py::test_how_to_configuration_covers_subscription_management_via_settings PASSED [ 62%]
+tests/test_judge.py::test_judge_escalated_ticket_no_reply PASSED         [ 63%]
+tests/test_judge.py::test_judge_deterministic_fallback_when_no_api_key PASSED [ 64%]
+tests/test_judge.py::test_judge_discards_max_tokens_truncated_verdict PASSED [ 65%]
+tests/test_judge.py::test_judge_parses_complete_llm_verdict PASSED       [ 67%]
+tests/test_link_checker.py::test_extract_urls_finds_bare_apple_co_and_full_urls PASSED [ 68%]
+tests/test_link_checker.py::test_verify_url_marks_real_specific_page_as_verified PASSED [ 69%]
+tests/test_link_checker.py::test_verify_url_marks_dead_link_as_broken PASSED [ 70%]
+tests/test_link_checker.py::test_verify_url_marks_bounce_to_domain_root_as_suspicious PASSED [ 71%]
+tests/test_link_checker.py::test_verify_url_network_failure_is_inconclusive_not_broken PASSED [ 72%]
+tests/test_link_checker.py::test_guardrail_link_check_is_off_by_default PASSED [ 73%]
+tests/test_link_checker.py::test_guardrail_link_check_flags_broken_link_when_enabled PASSED [ 74%]
+tests/test_link_checker.py::test_guardrail_evaluate_escalates_on_unverified_link_when_enabled PASSED [ 75%]
+tests/test_link_checker.py::test_guardrail_evaluate_passes_verified_link_when_enabled PASSED [ 76%]
+tests/test_llm_utils.py::test_gemini_2_generation_uses_thinking_budget PASSED [ 78%]
+tests/test_llm_utils.py::test_gemini_3_generation_uses_thinking_level PASSED [ 79%]
+tests/test_llm_utils.py::test_other_gemini_3_variants_also_use_thinking_level PASSED [ 80%]
+tests/test_llm_utils.py::test_degrades_to_none_when_sdk_lacks_thinking_level PASSED [ 81%]
+tests/test_llm_utils.py::test_degrades_to_none_when_sdk_lacks_thinking_budget PASSED [ 82%]
+tests/test_models.py::test_tweet_input_valid PASSED                      [ 83%]
+tests/test_models.py::test_tweet_input_rejects_empty_text PASSED         [ 84%]
+tests/test_models.py::test_intent_result_valid PASSED                    [ 85%]
+tests/test_models.py::test_intent_result_rejects_invalid_confidence PASSED [ 86%]
+tests/test_models.py::test_triage_decision_valid PASSED                  [ 87%]
+tests/test_models.py::test_support_response_full_serialization PASSED    [ 89%]
+tests/test_pipeline.py::test_pipeline_single_tweet_default_execution PASSED [ 90%]
+tests/test_pipeline.py::test_pipeline_batch_processing PASSED            [ 91%]
+tests/test_pipeline.py::test_pipeline_fail_closed_circuit_breaker PASSED [ 92%]
+tests/test_triage.py::test_triage_battery_hazard_escalation PASSED       [ 93%]
+tests/test_triage.py::test_triage_pii_email_escalation PASSED            [ 94%]
+tests/test_triage.py::test_triage_human_request_escalation PASSED        [ 95%]
+tests/test_triage.py::test_triage_high_frustration_lawsuit_threat PASSED [ 96%]
+tests/test_triage.py::test_triage_low_confidence_escalation PASSED       [ 97%]
+tests/test_triage.py::test_triage_low_retrieval_similarity_escalation PASSED [ 98%]
+tests/test_triage.py::test_triage_safe_auto_handle_clearance PASSED      [100%]
+
+=============================== warnings summary ===============================
+src/eval/report_generator.py:116
+src/eval/report_generator.py:116
+src/eval/report_generator.py:116
+src/eval/report_generator.py:116
+  /root/sc/src/eval/report_generator.py:116: DeprecationWarning: invalid escape sequence '\k'
+    report_content = f"""# Benchmark Report: AI Customer Support & Triage Agent for {TARGET_BRAND}
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 91 passed, 4 warnings in 12.09s ========================
+
+=== BASELINE: python -m src.eval.runner ===
+
+╭──────────────────── Benchmark Suite ────────────────────╮
+│ Hiver SDE Intern Benchmark Evaluation Runner            │
+│ Target Brand: @AppleSupport                             │
+│ Evaluation Set: 188 of 188 Hand-Labelled Golden Samples │
+│ Requirement: Reproducible in < 15 minutes               │
+╰─────────────────────────────────────────────────────────╯
+Evaluating Baseline 1 (Trivial Majority)...
+Evaluating Baseline 2 (Simple TF-IDF)...
+Evaluating Proposed Production Pipeline (Semantic RAG + Triage Gate)...
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 6195.16it/s]
+Evaluating LLM-as-a-Judge Rubric & Human Agreement...
+                  Hiver SDE Intern: Headline Benchmark Results                  
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┓
+┃                                  ┃ Baseline ┃ Baseline ┃ Proposed ┃          ┃
+┃                                  ┃    1     ┃    2     ┃  System  ┃ Lift vs  ┃
+┃ Evaluation Metric                ┃ (Trivia… ┃ (Simple) ┃ (Produc… ┃  Simple  ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━┩
+│ Intent Macro-F1                  │  0.0905  │  0.3423  │  0.5692  │ +0.2269  │
+│ Intent Accuracy                  │  29.3%   │  38.8%   │  61.7%   │  +22.9%  │
+│ Triage Accuracy                  │  82.5%   │  75.0%   │  64.9%   │  -10.1%  │
+│ Escalation Recall                │   0.0%   │  25.0%   │  93.8%   │  +68.8%  │
+│ Missed Escalations (Safety Risk) │ 32 / 32  │ 24 / 32  │  2 / 32  │   +22    │
+│ ROUGE-L Grounding Score          │  0.1673  │  0.1516  │  0.4712  │ +0.3196  │
+│ LLM Judge Quality (1-5)          │  4.3 /   │  4.0 /   │  4.1 /   │   +0.1   │
+│                                  │   5.0    │   5.0    │   5.0    │          │
+└──────────────────────────────────┴──────────┴──────────┴──────────┴──────────┘
+Production Intent Confusion Matrix (rows=true,
+               cols=predicted)                
+┏━━━━━━━━━━━━━┳━━━━━┳━━━━━┳━━━━━┳━━━━━┳━━━━━━┓
+┃ True \ Pred ┃ ABI ┃ HAB ┃ HTC ┃ OST ┃ OOSA ┃
+┡━━━━━━━━━━━━━╇━━━━━╇━━━━━╇━━━━━╇━━━━━╇━━━━━━┩
+│ ABI         │ 28  │  -  │  -  │  2  │  6   │
+│ HAB         │  2  │ 31  │  1  │  8  │  5   │
+│ HTC         │  4  │  4  │  5  │  3  │  4   │
+│ OST         │  2  │  8  │  1  │ 37  │  7   │
+│ OOSA        │  8  │  3  │  3  │  1  │  15  │
+└─────────────┴─────┴─────┴─────┴─────┴──────┘
+ABI=ACCOUNT_BILLING_ICLOUD  HAB=HARDWARE_AND_BATTERY  HTC=HOW_TO_CONFIGURATION  
+OST=OS_SOFTWARE_TROUBLESHOOTING  OOSA=OUT_OF_SCOPE_AMBIGUOUS
+╭─────────────── Verification & Deliverables Summary ────────────────╮
+│ Human-Judge Cohen's Kappa: kappa = 0.0716 (Slight agreement)       │
+│ Exact Agreement (Safety): 42.0%                                    │
+│ Report Generated: /root/sc/docs/REPORT.md                          │
+│ Dashboard Summary JSON: /root/sc/docs/benchmark_summary.json       │
+│ Production P95 Latency (measured): 61.21 ms                        │
+│ Benchmark Execution Time: 17.30 seconds (Target: < 900s / 15 mins) │
+│                                                                    │
+╰────────────────────────────────────────────────────────────────────╯
+
+=== RUN ENVIRONMENT (read this before trusting any number above) ===
+* Commit: baseline taken at 4c5dd1e (origin/main at time of capture).
+* Embedding model: all-MiniLM-L6-v2 loaded from a LOCAL directory
+  (EMBEDDING_MODEL_NAME=/root/models/all-MiniLM-L6-v2) because huggingface.co is
+  blocked (HTTP 403 at the egress proxy) in both environments available to this
+  run. The weights are the same snapshot (1110a243...) the repo owner already had
+  cached; they were copied in, not substituted.
+* NO GEMINI_API_KEY was set. The generator and the LLM judge therefore ran on
+  their deterministic / template fallback paths. Consequence: the
+  "LLM Judge Quality (1-5)" row and any judge-derived number in this baseline are
+  NOT comparable to a keyed run, and must not be quoted as LLM-graded results.
+  Intent/triage/ROUGE-L/latency/kappa numbers do not depend on the API key.
+* Judge sanity signal worth keeping: the trivial baseline scored HIGHER (4.3)
+  than production (4.1) on the fallback judge. That is consistent with, and
+  further evidence for, the weak kappa (0.0716) already reported.
+
+=== DELTA vs WHAT THE DOCS CLAIM (drift, recorded for Phase 1.3 / Phase 4) ===
+  metric                 | docs claim | this real run
+  Intent accuracy (prod) |      62.2% |        61.7%
+  Triage accuracy (prod) |      60.1% |        64.9%
+  Intent accuracy (tfidf)|      52.1% |        38.8%
+  Escalation recall      |      93.8% |        93.8%  (matches)
+  Missed escalations     |       2/32 |         2/32  (matches)
+  Human-judge kappa      |       0.07 |       0.0716  (matches)
+The first three are stale numbers in README.md / docs/REPORT.md, not a
+regression introduced here -- no code had been changed at the time of this run.
