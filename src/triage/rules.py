@@ -89,7 +89,14 @@ PHYSICAL_DAMAGE_REGEX = re.compile(
 )
 
 HUMAN_REQUEST_REGEX = re.compile(
-    r"\b(speak|talk|connect|transfer)\s+(to|with)\s+(a\s+)?(human|person|real person|agent|representative|advisor|operator|manager)\b"
+    # The optional pronoun is not cosmetic: "transfer me to an agent" and
+    # "connect me with a person" are the natural phrasings, and the original
+    # pattern (verb immediately followed by to/with) matched neither.
+    # (an?\s+|the\s+)? not (a\s+)? -- the original could not match the article in
+    # "transfer me to AN agent", because "a" was only accepted when followed by
+    # whitespace. One character of regex, and the most natural phrasing of the
+    # request this gate exists to catch went undetected.
+    r"\b(speak|talk|connect|transfer|put)\s+(me|us)?\s*(to|with|through\s+to)\s+(an?\s+|the\s+)?(human|person|real person|agent|representative|advisor|operator|manager)\b"
     r"|\b(want|need)\s+(to\s+)?(speak|talk)\s+(to|with)\s+(a\s+)?(human|person|agent|representative|manager)\b"
     r"|\breal human\b"
     r"|\bstop\s+(this\s+|the\s+|with\s+this\s+)?(automated\s+)?(bot|robot)\b"
@@ -107,8 +114,19 @@ PROMPT_INJECTION_REGEX = re.compile(
     # the original version only allowed exactly one, so "ignore your
     # previous instructions" (two qualifiers: "your" and "previous") didn't
     # match at all, a real miss found while writing this hardening pass.
-    r"\bignore\s+(?:(?:your|all|previous|the\s+above)\s+)*instructions\b"
+    # The verb alternation matters as much as the qualifier one. This previously
+    # matched only "ignore ... instructions", so "DISREGARD your previous
+    # instructions" and "FORGET your instructions" -- the two most common
+    # paraphrases, and ones docs/REPORT.md listed as known misses -- walked
+    # straight through. Requiring the noun "instructions"/"rules" is what keeps
+    # ordinary language out: "please ignore my previous tweet" still does not
+    # match, and neither does "can you forget my old Apple ID".
+    r"\b(?:ignore|disregard|forget|override)\s+(?:(?:your|all|previous|earlier|the\s+above|any)\s+)*(?:instructions|rules|prompt)\b"
     r"|\bdisregard\s+(?:(?:all|previous|the\s+above|safety)\s+)*rules\b"
+    # A fake system turn. Attackers prefix a line with a role label to make the
+    # model treat injected text as privileged instruction rather than customer
+    # content.
+    r"|\b(?:system|assistant|developer)\s*:\s*(?:override|ignore|disable|disregard|you\s+are)\b"
     r"|\byou are now\b.{0,20}\b(dan|jailbroken|unrestricted)\b"
     r"|\bprint (your |the )?system prompt\b"
     r"|\breveal (your |the |internal )?(system prompt|instructions|internal (support )?scripts?)\b"
@@ -127,8 +145,15 @@ PROMPT_INJECTION_REGEX = re.compile(
 UNSAFE_ADVICE_REGEX = re.compile(
     r"\bpuncture\b.{0,15}\bbattery\b"
     r"|\bremove\s+the\s+battery\s+yourself\b"
-    r"|\bjailbreak\b"
-    r"|\bopen\s+(up\s+)?the\s+(device|iphone|ipad|macbook)\s+(yourself|casing)\b"
+    # \bjailbreak\b does not match "jailbreaking" or "jailbroken" -- the trailing
+    # suffix defeats the word boundary, so the most common forms of the word were
+    # invisible to this check.
+    r"|\bjailbreak(?:ing|ed|en)?\b|\bjailbroken\b"
+    # "open the case/casing/back" covers the phrasing a customer actually reads as
+    # instructions; the original required naming a device AND the word
+    # "yourself"/"casing", so "open the case with a screwdriver" passed.
+    r"|\bopen\s+(up\s+)?the\s+(device|iphone|ipad|macbook|case|casing|back)\b"
+    r"|\b(pry|lever)\s+(it|the\s+\w+)\s+(open|apart)\b"
     r"|\bmicrowave\b|\boven\b.{0,10}\bdry\b"
     r"|\buse\s+(a\s+)?(hair\s*dryer|excessive\s+force)\b",
     re.IGNORECASE,

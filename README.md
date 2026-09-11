@@ -62,7 +62,7 @@ cp .env.example .env    # optional: add a real GEMINI_API_KEY here
 | Command | What it does |
 | :--- | :--- |
 | `python -m src.eval.runner` | Runs the full benchmark (188 examples, 2 baselines, LLM judge, human-agreement check) in under 15 minutes -- usually well under 1. |
-| `pytest tests/ -v` | Runs the test suite (140 test functions). |
+| `pytest tests/ -v` | Runs the test suite (150 test functions). |
 | `./run.sh` | Starts the dashboard + API at `http://localhost:8000`. |
 | `python -m src.cli --query "..."` | Processes one query from the terminal. |
 
