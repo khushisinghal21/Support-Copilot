@@ -108,5 +108,48 @@ GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 # env var / .env file -- nothing else in the code assumes a specific model.
 GEMINI_MODEL_NAME: str = os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash")
 
+# -------------------------------------------------------------------------
+# Web server hardening (src/server.py). All three default to "behave exactly
+# as before", so a local `./run.sh` is unaffected by their existence.
+# -------------------------------------------------------------------------
+
+# CORS origins for the dashboard/API, comma-separated.
+#
+# This used to be allow_origins=["*"] together with allow_credentials=True.
+# That pair is not just loose, it is self-defeating: the CORS spec forbids a
+# wildcard origin on a credentialed response, so browsers reject it outright --
+# the configuration that looks maximally permissive actually breaks the
+# credentialed case it was presumably meant to allow, while still advertising
+# the whole API to every origin for non-credentialed reads. Credentials are
+# therefore only enabled when an explicit origin list is given (see
+# src/server.py), and "*" means "public read-only API, no credentials".
+CORS_ALLOW_ORIGINS: str = os.getenv("CORS_ALLOW_ORIGINS", "*")
+
+# Token-bucket rate limit on POST /api/process, per client IP. That endpoint
+# spends real money per call (a Gemini request) and had no limit at all, so a
+# single loop could run up an API bill against a public URL. The default is
+# deliberately generous -- it exists to stop abuse and accidents, not to shape
+# legitimate traffic -- and the dashboard's own interactive use stays well
+# under it. Set RATE_LIMIT_PER_MINUTE=0 to disable entirely.
+RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
+RATE_LIMIT_BURST: int = int(os.getenv("RATE_LIMIT_BURST", "10"))
+
+# Optional shared-secret header check on the API. Empty (the default) means no
+# auth, so local development and the existing public demo behave exactly as
+# before; set API_KEY to require an X-API-Key header on /api/process. This is a
+# deliberately minimal mechanism -- a single shared secret is appropriate for a
+# demo with one caller, and is not presented as a substitute for real per-user
+# authentication.
+API_KEY: str = os.getenv("API_KEY", "")
+
+# Bound on the in-memory decision-log write queue (src/pipeline.py). The audit
+# log used to be written with a blocking open/append inside the request path;
+# on a slow or full disk that latency lands on the customer. A bounded queue
+# drained by one background writer keeps the "never break the pipeline"
+# guarantee while also keeping "never slow the pipeline" -- and being bounded
+# rather than unbounded means a stuck writer costs a fixed amount of memory and
+# some dropped audit lines, not the process.
+DECISION_LOG_QUEUE_MAX: int = int(os.getenv("DECISION_LOG_QUEUE_MAX", "1000"))
+
 # Target Brand
 TARGET_BRAND: str = "@AppleSupport"

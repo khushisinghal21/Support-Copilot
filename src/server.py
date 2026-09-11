@@ -1,10 +1,13 @@
 """FastAPI Web Server & Interactive Dashboard for Hiver AI Customer Support Agent."""
 
 import json
+import logging
+import threading
 import time
+from collections import defaultdict
 from pathlib import Path
-from typing import Optional, List
-from fastapi import FastAPI, HTTPException
+from typing import Optional, List, Dict, Tuple
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +15,16 @@ from pydantic import BaseModel, Field
 
 from src.models import TweetInput, SupportResponse, TriageAction
 from src.pipeline import SupportPipeline
-from src.config import TARGET_BRAND, BENCHMARK_SUMMARY_JSON_PATH
+from src.config import (
+    TARGET_BRAND,
+    BENCHMARK_SUMMARY_JSON_PATH,
+    CORS_ALLOW_ORIGINS,
+    RATE_LIMIT_PER_MINUTE,
+    RATE_LIMIT_BURST,
+    API_KEY,
+)
+
+logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -22,12 +34,28 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# CORS. The previous configuration was allow_origins=["*"] WITH
+# allow_credentials=True, which the CORS spec forbids: a browser rejects a
+# wildcard origin on a credentialed response outright. So that pairing did not
+# grant broad credentialed access, it silently broke the credentialed case while
+# still exposing the API to every origin for ordinary reads. Origins are now
+# configurable (CORS_ALLOW_ORIGINS, comma-separated), and credentials are
+# enabled only when an explicit list is supplied -- never alongside "*".
+# Derive the wildcard flag from the EFFECTIVE list, after the empty-config
+# fallback, not from the parsed one. An earlier version of this fix computed
+# `_wildcard = _origins == ["*"]` before falling back, so CORS_ALLOW_ORIGINS=""
+# produced allow_origins=["*"] with allow_credentials=True -- the same forbidden
+# pairing being fixed here, reachable through a different input. Caught by
+# tests/test_server_hardening.py, which is why that test parametrises over the
+# empty string rather than only the obvious "*".
+_origins = [o.strip() for o in CORS_ALLOW_ORIGINS.split(",") if o.strip()] or ["*"]
+_wildcard = "*" in _origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_origins,
+    allow_credentials=not _wildcard,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
 
 # Pipeline is genuinely lazy: constructed on the FIRST real request, not at
@@ -42,14 +70,68 @@ app.add_middleware(
 # to do with this eager call contradicting its own "lazily" comment. Removed
 # the startup hook; the first real request now pays a one-time model-load
 # cost instead, and the port binds immediately regardless of host CPU.
+# Construction is also guarded by a lock. Without one, two concurrent cold
+# requests both saw _pipeline is None and both built a SupportPipeline -- which
+# means two SentenceTransformer loads in a process whose memory ceiling is 512MB
+# on the deploy target. That is precisely the out-of-memory class the deploy
+# notes in render.yaml and src/embeddings.py were already fighting; an unguarded
+# singleton quietly reintroduced it under the one condition (a cold start taking
+# real time) where concurrent first requests are most likely.
 _pipeline: Optional[SupportPipeline] = None
+_pipeline_lock = threading.Lock()
 
 
 def get_pipeline() -> SupportPipeline:
+    """Thread-safe, double-checked lazy construction. The first check avoids
+    taking the lock on the overwhelmingly common warm path; the second makes the
+    cold path correct."""
     global _pipeline
-    if _pipeline is None:
-        _pipeline = SupportPipeline()
+    if _pipeline is not None:
+        return _pipeline
+    with _pipeline_lock:
+        if _pipeline is None:
+            _pipeline = SupportPipeline()
     return _pipeline
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting and optional auth for /api/process
+#
+# That endpoint spends money per call (a Gemini request) and had neither. On a
+# public URL, one loop is an API bill. This is an in-process token bucket per
+# client IP: adequate and honest for a single-instance deployment, and
+# deliberately not presented as more than that -- it resets on restart and does
+# not coordinate across instances, so a multi-instance deployment would need a
+# shared store (Redis) instead.
+# ---------------------------------------------------------------------------
+_buckets: Dict[str, Tuple[float, float]] = {}  # ip -> (tokens, last_refill_ts)
+_bucket_lock = threading.Lock()
+
+
+def _rate_limit_check(client_ip: str) -> Tuple[bool, float]:
+    """Returns (allowed, retry_after_seconds). A limit of 0 disables the check."""
+    if RATE_LIMIT_PER_MINUTE <= 0:
+        return True, 0.0
+    refill_per_sec = RATE_LIMIT_PER_MINUTE / 60.0
+    capacity = float(max(RATE_LIMIT_BURST, 1))
+    now = time.monotonic()
+    with _bucket_lock:
+        tokens, last = _buckets.get(client_ip, (capacity, now))
+        tokens = min(capacity, tokens + (now - last) * refill_per_sec)
+        if tokens >= 1.0:
+            _buckets[client_ip] = (tokens - 1.0, now)
+            return True, 0.0
+        _buckets[client_ip] = (tokens, now)
+        return False, max(1.0, (1.0 - tokens) / refill_per_sec)
+
+
+def _require_api_key(provided: Optional[str]) -> None:
+    """No-op unless API_KEY is configured, so local dev and the existing public
+    demo are unaffected by this existing."""
+    if not API_KEY:
+        return
+    if provided != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key header.")
 
 
 class QueryRequest(BaseModel):
@@ -110,6 +192,8 @@ def health():
         "status": "healthy",
         "brand": TARGET_BRAND,
         "pipeline_ready": _pipeline is not None,
+        "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE,
+        "auth_required": bool(API_KEY),
     }
 
 
@@ -142,7 +226,22 @@ def get_benchmark_summary():
 
 
 @app.post("/api/process", response_model=SupportResponse)
-def process_tweet(req: QueryRequest):
+def process_tweet(
+    req: QueryRequest,
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
+    _require_api_key(x_api_key)
+
+    client_ip = request.client.host if request.client else "unknown"
+    allowed, retry_after = _rate_limit_check(client_ip)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded ({RATE_LIMIT_PER_MINUTE}/min). Retry in {retry_after:.0f}s.",
+            headers={"Retry-After": str(int(retry_after))},
+        )
+
     pipeline = get_pipeline()
     tw_id = req.tweet_id or f"web_{int(time.time() * 1000)}"
     tweet = TweetInput(

@@ -1,6 +1,8 @@
 """End-to-end AI Customer Support & Triage Pipeline orchestrator."""
 
 import json
+import queue
+import threading
 import time
 import logging
 from typing import List, Optional
@@ -19,18 +21,83 @@ from src.drafting.retriever import HistoricalRetriever
 from src.drafting.generator import GroundedReplyGenerator
 from src.triage.engine import TriageEngine
 from src.triage.reasons import get_clarifying_question
-from src.config import DECISION_LOG_PATH
+from src.config import DECISION_LOG_PATH, DECISION_LOG_QUEUE_MAX
 
 logger = logging.getLogger(__name__)
 
 
+# Single background writer for the decision audit log.
+#
+# The log itself is the seed of an active-learning / recalibration loop: with
+# real traffic, a human agent's accept/override of each decision could be
+# appended to the same row and used to re-tune triage thresholds against actual
+# outcomes instead of a fixed one-time golden-set snapshot.
+#
+# It used to be written with a blocking open/append *inside* the request path.
+# That kept the "never break the pipeline" guarantee (the whole thing was
+# wrapped in try/except) but not "never slow the pipeline": on a slow, contended
+# or full disk, that write latency is paid by the customer waiting for a reply,
+# for a line nobody reads in real time. It was also unbounded -- nothing capped
+# how much work could pile up.
+#
+# Now: a bounded queue drained by one daemon thread. Bounded rather than
+# unbounded on purpose -- if the writer wedges, the cost is a fixed amount of
+# memory and some counted, logged, dropped audit lines, instead of the process.
+# Both guarantees hold: a logging failure cannot raise into the request path,
+# and a logging slowdown cannot extend it.
+_log_queue: "queue.Queue[Optional[dict]]" = queue.Queue(maxsize=DECISION_LOG_QUEUE_MAX)
+_log_writer_thread: Optional[threading.Thread] = None
+_log_writer_lock = threading.Lock()
+_dropped_log_rows = 0
+
+
+def _drain_decision_log() -> None:
+    """Background writer loop. Opens the file per batch rather than holding a
+    handle forever, so an external log-rotate still works."""
+    while True:
+        row = _log_queue.get()
+        if row is None:  # shutdown sentinel
+            _log_queue.task_done()
+            return
+        try:
+            with open(DECISION_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps(row) + "\n")
+        except Exception as e:  # pragma: no cover - logging must never break the pipeline
+            logger.warning(f"Failed to write decision audit log: {e}")
+        finally:
+            _log_queue.task_done()
+
+
+def _ensure_log_writer() -> None:
+    global _log_writer_thread
+    if _log_writer_thread is not None and _log_writer_thread.is_alive():
+        return
+    with _log_writer_lock:
+        if _log_writer_thread is not None and _log_writer_thread.is_alive():
+            return
+        _log_writer_thread = threading.Thread(
+            target=_drain_decision_log,
+            name="decision-log-writer",
+            daemon=True,
+        )
+        _log_writer_thread.start()
+
+
+def flush_decision_log(timeout: float = 5.0) -> bool:
+    """Blocks until queued audit rows have been written. For tests and for a
+    clean shutdown -- the request path never calls this."""
+    _ensure_log_writer()
+    deadline = time.perf_counter() + timeout
+    while not _log_queue.empty() and time.perf_counter() < deadline:
+        time.sleep(0.01)
+    return _log_queue.empty()
+
+
 def _append_decision_log(response: SupportResponse) -> None:
-    """Appends every pipeline decision to a local JSONL audit log -- the seed
-    of an active-learning / recalibration loop. With real traffic, a human
-    agent's accept/override of each decision could be appended to the same
-    row and used to re-tune triage thresholds against actual outcomes
-    instead of a fixed one-time golden-set snapshot. Best-effort: never let
-    logging failures affect the customer-facing response."""
+    """Enqueues one audit row. Non-blocking, bounded, and incapable of raising
+    into the caller -- see the module-level note above for why all three
+    matter."""
+    global _dropped_log_rows
     try:
         row = {
             "tweet_id": response.tweet_id,
@@ -41,10 +108,19 @@ def _append_decision_log(response: SupportResponse) -> None:
             "risk_score": response.triage.risk_score,
             "execution_time_ms": response.execution_time_ms,
         }
-        with open(DECISION_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(row) + "\n")
+        _ensure_log_writer()
+        try:
+            _log_queue.put_nowait(row)
+        except queue.Full:
+            _dropped_log_rows += 1
+            # Logged, counted, and visible -- a silently dropped audit row would
+            # be worse than a slow one.
+            logger.warning(
+                f"Decision audit log queue full (max {DECISION_LOG_QUEUE_MAX}); "
+                f"dropped {_dropped_log_rows} row(s) so far"
+            )
     except Exception as e:  # pragma: no cover - logging must never break the pipeline
-        logger.warning(f"Failed to write decision audit log: {e}")
+        logger.warning(f"Failed to enqueue decision audit log row: {e}")
 
 
 class SupportPipeline:
