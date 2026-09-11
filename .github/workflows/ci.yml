@@ -1,0 +1,100 @@
+name: CI
+
+# Every check here must pass with NO network and NO API key. That is not a
+# convenience, it is the property that makes the suite trustworthy: a test that
+# can reach huggingface.co or the Gemini API can pass for reasons unrelated to
+# the code, and can fail for reasons unrelated to the code. The project has
+# already been burned by exactly this -- see docs/AUDIT_AND_FIX_PLAN.md on the
+# embedding model being blocked at a network policy layer mid-audit.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # No key: the generator and judge take their deterministic fallback paths.
+  GEMINI_API_KEY: ""
+  # Belt and braces -- if something tries to reach the hub anyway, fail fast and
+  # loudly instead of hanging a CI job on a network timeout.
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  # The link checker fires real HTTP requests; it is opt-in and must stay off here.
+  ENABLE_LIVE_LINK_CHECK: "false"
+  # Grounding falls back to the lexical check automatically when no encoder can be
+  # built, which is the state of this job. Pinned explicitly so the fallback is a
+  # tested path rather than an accident.
+  GROUNDING_MODE: "lexical"
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        # CPU-only torch, for the same reason render.yaml resolves it this way:
+        # the default PyPI wheel drags in a full CUDA stack that no CI runner or
+        # deploy target here has a GPU for. Read render.yaml's comment before
+        # changing this -- installing torch in a SEPARATE pip call does not work,
+        # because the second call's resolver pulls the CUDA build straight back in.
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu \
+                      --extra-index-url https://pypi.org/simple \
+                      -r requirements.txt
+          pip install ruff mypy pytest-cov
+
+      - name: Lint (ruff check)
+        run: ruff check .
+
+      - name: Format (ruff format --check)
+        run: ruff format --check .
+
+      - name: Types (mypy)
+        run: mypy src/
+
+      - name: Tests with coverage
+        # Thresholds are enforced, not reported: --cov-fail-under turns a coverage
+        # regression into a failed build. The safety-critical modules carry their
+        # own higher bar in the next step.
+        run: |
+          pytest tests/ -q \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=85
+
+      - name: Coverage floor on the safety-critical modules
+        # src/triage/ and the output guardrails are the code that decides whether
+        # an unsafe reply ships. 85% is not enough there.
+        run: |
+          pytest tests/ -q \
+            --cov=src/triage --cov=src/drafting/guardrails.py \
+            --cov-report=term-missing \
+            --cov-fail-under=95
+
+      - name: Eval harness smoke run
+        # A fast subset, offline. This catches the class of breakage a unit test
+        # cannot: the harness still loads the golden set, still honours the
+        # calibration/held-out split, and still writes both report artefacts.
+        run: |
+          python -m src.eval.runner --quick
+          test -f docs/benchmark_summary.json
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore

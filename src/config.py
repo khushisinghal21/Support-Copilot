@@ -4,9 +4,99 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pydantic import Field, ValidationError
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load environment variables from .env if present
 load_dotenv()
+
+
+class Settings(BaseSettings):
+    """Validated settings with real bounds.
+
+    Every numeric tunable below used to be a bare cast of an env var --
+    `float(os.getenv("MIN_INTENT_CONFIDENCE", "0.40"))`. Two failure modes, both
+    of which this configuration style invites:
+
+      * A malformed value (MIN_INTENT_CONFIDENCE=high) raised ValueError at IMPORT
+        time from inside a module nobody was looking at, with a traceback naming
+        `float()` rather than the setting. On a deploy that is a crash loop whose
+        message is three frames from its cause.
+      * A well-formed but nonsensical value (MIN_INTENT_CONFIDENCE=40, meaning
+        "40%") was accepted in silence. A confidence floor of 40.0 compared
+        against a softmax probability escalates every single ticket, and nothing
+        anywhere would have said a word.
+
+    Bounds turn the second class into the first, and _load_settings() below turns
+    the first into a message naming the setting, its value and the allowed range.
+
+    Values and their justifications are unchanged -- the comments on each field are
+    the originals, because the reasoning behind a threshold is the part that cannot
+    be reconstructed from the number.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=True,
+    )
+
+    # MIN_INTENT_CONFIDENCE = 0.40: modest bump from 0.35 -- catches more genuine
+    # misclassifications (16.7% -> 26.4%) for a small false-escalation cost
+    # (4.3% -> 8.6%). See the calibration note further down this file.
+    MIN_INTENT_CONFIDENCE: float = Field(default=0.40, ge=0.0, le=1.0)
+
+    # MIN_RETRIEVAL_SIMILARITY = 0.20: lowered, not raised, from 0.40. Youden's J
+    # stays near zero across most of the sweep, so this is a last-resort "nothing
+    # remotely relevant was found" backstop, not a primary safety gate.
+    MIN_RETRIEVAL_SIMILARITY: float = Field(default=0.20, ge=0.0, le=1.0)
+
+    FRUSTRATION_THRESHOLD: float = Field(default=0.60, ge=0.0, le=1.0)
+
+    # Cosine floor for the embedding grounding check -- a different scale from the
+    # lexical overlap ratio and not comparable to it (docs/REPORT.md section 5b has
+    # the measured comparison). Lower bound is -1.0 because cosine similarity is
+    # legitimately negative.
+    MIN_GROUNDING_SIMILARITY: float = Field(default=0.30, ge=-1.0, le=1.0)
+
+    # Cold-start RAG corpus cap. ge=1 because 0 would index nothing and silently
+    # disable retrieval grounding entirely.
+    RAG_CORPUS_MAX_RECORDS: int = Field(default=800, ge=1, le=1_000_000)
+
+    # 0 disables rate limiting deliberately, so ge=0 not ge=1.
+    RATE_LIMIT_PER_MINUTE: int = Field(default=30, ge=0, le=100_000)
+    # ge=1: a burst of 0 would reject every client's first request.
+    RATE_LIMIT_BURST: int = Field(default=10, ge=1, le=100_000)
+
+    # ge=1: an unbounded or zero-length audit queue both defeat the point.
+    DECISION_LOG_QUEUE_MAX: int = Field(default=1000, ge=1, le=1_000_000)
+
+
+def _load_settings() -> Settings:
+    """Instantiates Settings, turning pydantic's ValidationError into a message a
+    human can act on.
+
+    What a misconfigured deploy finds in its logs is the whole point: "Input should
+    be less than or equal to 1", raised three frames inside pydantic, is not
+    actionable; "MIN_INTENT_CONFIDENCE='40' -- Input should be less than or equal
+    to 1" names the variable to change.
+    """
+    try:
+        return Settings()
+    except ValidationError as exc:
+        lines = [
+            f"  {'.'.join(str(x) for x in err['loc']) or '<unknown>'}="
+            f"{os.getenv('.'.join(str(x) for x in err['loc']), '<unset>')!r}: {err['msg']}"
+            for err in exc.errors()
+        ]
+        raise RuntimeError(
+            "Invalid configuration. Fix these environment variables (or the "
+            "matching entries in your .env file):\n" + "\n".join(lines)
+        ) from exc
+
+
+settings = _load_settings()
 
 # Base Directories
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -30,6 +120,14 @@ BENCHMARK_SUMMARY_JSON_PATH = PROJECT_ROOT / "docs" / "benchmark_summary.json"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 CHROMA_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
 
+# Module-level aliases onto the validated Settings model above.
+#
+# Kept as plain module names rather than making callers use settings.X, so the
+# existing `from src.config import X` statements across src/ and tests/ -- and
+# every test that monkeypatches one -- keep working unchanged. These lines are
+# bindings; the reasoning for each value lives on its field above and in the
+# original calibration note that follows.
+#
 # Thresholds & Constraints
 #
 # Calibrated against the real golden set with `scripts/calibrate_thresholds.py`
@@ -53,9 +151,9 @@ CHROMA_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
 # belongs to the dedicated hazard/PII/human-request/frustration gates earlier
 # in src/triage/engine.py's cascade. At 0.20 this gate's false-escalation
 # rate on true-AUTO_HANDLE rows drops from 60.6% to 8.4%.
-MIN_INTENT_CONFIDENCE: float = float(os.getenv("MIN_INTENT_CONFIDENCE", "0.40"))
-MIN_RETRIEVAL_SIMILARITY: float = float(os.getenv("MIN_RETRIEVAL_SIMILARITY", "0.20"))
-FRUSTRATION_THRESHOLD: float = float(os.getenv("FRUSTRATION_THRESHOLD", "0.60"))
+MIN_INTENT_CONFIDENCE: float = settings.MIN_INTENT_CONFIDENCE
+MIN_RETRIEVAL_SIMILARITY: float = settings.MIN_RETRIEVAL_SIMILARITY
+FRUSTRATION_THRESHOLD: float = settings.FRUSTRATION_THRESHOLD
 MAX_TWEET_CHARS: int = 280
 
 # Live link verification (src/drafting/link_checker.py): actually fetches a
@@ -89,7 +187,7 @@ ENABLE_LIVE_LINK_CHECK: bool = os.getenv("ENABLE_LIVE_LINK_CHECK", "false").lowe
 # peak -- on top of torch/chromadb's own footprint -- was a real contributor
 # to out-of-memory crashes. A smaller RAG corpus is a disclosed trade-off
 # (fewer/less-diverse retrieved examples), not a silent one.
-RAG_CORPUS_MAX_RECORDS: int = int(os.getenv("RAG_CORPUS_MAX_RECORDS", "800"))
+RAG_CORPUS_MAX_RECORDS: int = settings.RAG_CORPUS_MAX_RECORDS
 
 # Embedding & LLM Configuration
 EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
@@ -125,7 +223,7 @@ GEMINI_MODEL_NAME: str = os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash")
 # lexical MIN overlap ratio (0.12) and is not comparable to it; see
 # docs/REPORT.md for the measured comparison of what each one catches.
 GROUNDING_MODE: str = os.getenv("GROUNDING_MODE", "embedding")
-MIN_GROUNDING_SIMILARITY: float = float(os.getenv("MIN_GROUNDING_SIMILARITY", "0.30"))
+MIN_GROUNDING_SIMILARITY: float = settings.MIN_GROUNDING_SIMILARITY
 
 # -------------------------------------------------------------------------
 # Web server hardening (src/server.py). All three default to "behave exactly
@@ -150,8 +248,8 @@ CORS_ALLOW_ORIGINS: str = os.getenv("CORS_ALLOW_ORIGINS", "*")
 # deliberately generous -- it exists to stop abuse and accidents, not to shape
 # legitimate traffic -- and the dashboard's own interactive use stays well
 # under it. Set RATE_LIMIT_PER_MINUTE=0 to disable entirely.
-RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
-RATE_LIMIT_BURST: int = int(os.getenv("RATE_LIMIT_BURST", "10"))
+RATE_LIMIT_PER_MINUTE: int = settings.RATE_LIMIT_PER_MINUTE
+RATE_LIMIT_BURST: int = settings.RATE_LIMIT_BURST
 
 # Optional shared-secret header check on the API. Empty (the default) means no
 # auth, so local development and the existing public demo behave exactly as
@@ -168,7 +266,7 @@ API_KEY: str = os.getenv("API_KEY", "")
 # guarantee while also keeping "never slow the pipeline" -- and being bounded
 # rather than unbounded means a stuck writer costs a fixed amount of memory and
 # some dropped audit lines, not the process.
-DECISION_LOG_QUEUE_MAX: int = int(os.getenv("DECISION_LOG_QUEUE_MAX", "1000"))
+DECISION_LOG_QUEUE_MAX: int = settings.DECISION_LOG_QUEUE_MAX
 
 # Target Brand
 TARGET_BRAND: str = "@AppleSupport"

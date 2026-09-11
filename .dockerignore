@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+data/chroma_db
+data/decision_log.jsonl
+docs/baselines
+*.egg-info

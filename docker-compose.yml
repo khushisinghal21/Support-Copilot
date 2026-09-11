@@ -1,0 +1,23 @@
+# One-command local run:  docker compose up --build
+services:
+  support-copilot:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Everything optional. With no GEMINI_API_KEY the generator and judge take
+      # their deterministic fallback paths and the app still works end to end --
+      # that is a documented property, not a degraded mode nobody tests.
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      # Not "*": a container published on a host port is exactly where a wildcard
+      # CORS policy stops being theoretical.
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS:-http://localhost:8000}"
+      RATE_LIMIT_PER_MINUTE: "${RATE_LIMIT_PER_MINUTE:-30}"
+    volumes:
+      # Persist the vector index and audit log across restarts so a container
+      # rebuild does not pay the corpus re-indexing cost every time.
+      - support-copilot-data:/app/data
+
+volumes:
+  support-copilot-data:
