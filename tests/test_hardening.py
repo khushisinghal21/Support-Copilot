@@ -20,6 +20,7 @@ from src.triage.sentiment import SentimentAnalyzer
 # Negation handling (src/triage/rules.py)
 # ---------------------------------------------------------------------------
 
+
 def test_negated_battery_hazard_does_not_escalate():
     matcher = RuleMatcher()
     is_hazard, rules = matcher.detect_hardware_hazard(
@@ -31,9 +32,7 @@ def test_negated_battery_hazard_does_not_escalate():
 
 def test_genuine_battery_hazard_still_escalates():
     matcher = RuleMatcher()
-    is_hazard, rules = matcher.detect_hardware_hazard(
-        "Help! My iPhone battery is swollen and bulging the screen out!!"
-    )
+    is_hazard, rules = matcher.detect_hardware_hazard("Help! My iPhone battery is swollen and bulging the screen out!!")
     assert is_hazard is True
     assert "BATTERY_THERMAL_HAZARD" in rules
 
@@ -50,6 +49,7 @@ def test_negated_smoke_does_not_escalate():
 # candidates -- see scripts/finalize_golden_set.py's
 # HARD_NEGATIVE_CASE_NUMBER_MATCHES_PHONE_REGEX override).
 # ---------------------------------------------------------------------------
+
 
 def test_case_number_does_not_match_phone_regex():
     matcher = RuleMatcher()
@@ -68,6 +68,7 @@ def test_real_phone_number_with_separators_still_detected():
 # ---------------------------------------------------------------------------
 # Prompt injection detection (new safety guardrail)
 # ---------------------------------------------------------------------------
+
 
 def test_prompt_injection_detected():
     matcher = RuleMatcher()
@@ -105,6 +106,7 @@ def test_engine_escalates_prompt_injection_before_any_other_gate():
 # found in the Kaggle data during golden-set construction.
 # ---------------------------------------------------------------------------
 
+
 def test_reporting_a_scam_not_victimized_does_not_escalate():
     analyzer = SentimentAnalyzer()
     is_frustrated, _score, _ = analyzer.is_severe_frustration(
@@ -123,9 +125,7 @@ def test_corroborated_fraud_claim_does_escalate():
 
 def test_genuine_account_compromise_always_escalates():
     analyzer = SentimentAnalyzer()
-    is_frustrated, _score, markers = analyzer.is_severe_frustration(
-        "My account was hacked and I can't log back in."
-    )
+    is_frustrated, _score, markers = analyzer.is_severe_frustration("My account was hacked and I can't log back in.")
     assert is_frustrated is True
     assert any("ACCOUNT_COMPROMISE" in m for m in markers)
 
@@ -133,6 +133,7 @@ def test_genuine_account_compromise_always_escalates():
 # ---------------------------------------------------------------------------
 # Output guardrails: PII echo, unsafe advice, grounding (new safety features)
 # ---------------------------------------------------------------------------
+
 
 def test_pii_echo_blocked():
     guardrail = OutputGuardrail()
@@ -198,6 +199,7 @@ def test_grounded_draft_passes_grounding_check():
 # ---------------------------------------------------------------------------
 # CLARIFY path (new triage action, Gate 6b in src/triage/engine.py)
 # ---------------------------------------------------------------------------
+
 
 def test_clarify_fires_on_ambiguous_device_moderate_confidence():
     engine = TriageEngine()

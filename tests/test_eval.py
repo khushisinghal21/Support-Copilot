@@ -23,8 +23,7 @@ def test_golden_dataset_schema():
         records = [json.loads(line) for line in f if line.strip()]
 
     assert MIN_GOLDEN_ROWS <= len(records) <= MAX_GOLDEN_ROWS, (
-        f"Golden set has {len(records)} rows; the assignment brief calls for "
-        f"{MIN_GOLDEN_ROWS}-{MAX_GOLDEN_ROWS}."
+        f"Golden set has {len(records)} rows; the assignment brief calls for {MIN_GOLDEN_ROWS}-{MAX_GOLDEN_ROWS}."
     )
 
     required_keys = {"tweet_id", "text", "author_id", "true_intent", "true_triage_action", "reference_resolution"}
@@ -93,15 +92,26 @@ def test_report_file_generation():
 # pipeline, so they don't need the embedding model and run anywhere.
 # ---------------------------------------------------------------------------
 
+
 def _fake_metrics_dicts():
     trivial = {
         "intent": {"macro_f1": 0.0905, "accuracy": 0.293},
-        "triage": {"accuracy": 0.825, "escalation_recall": 0.0, "missed_escalation_count": 32, "total_escalations_true": 32},
+        "triage": {
+            "accuracy": 0.825,
+            "escalation_recall": 0.0,
+            "missed_escalation_count": 32,
+            "total_escalations_true": 32,
+        },
         "judge": {"overall_score": 4.3},
     }
     simple = {
         "intent": {"macro_f1": 0.5112, "accuracy": 0.521},
-        "triage": {"accuracy": 0.750, "escalation_recall": 0.250, "missed_escalation_count": 24, "total_escalations_true": 32},
+        "triage": {
+            "accuracy": 0.750,
+            "escalation_recall": 0.250,
+            "missed_escalation_count": 24,
+            "total_escalations_true": 32,
+        },
         "judge": {"overall_score": 4.0},
     }
     prod = {
@@ -111,7 +121,13 @@ def _fake_metrics_dicts():
             "labels": ["ACCOUNT_BILLING_ICLOUD", "HARDWARE_AND_BATTERY", "OUT_OF_SCOPE_AMBIGUOUS"],
             "confusion_matrix": [[10, 0, 2], [0, 12, 3], [2, 3, 15]],
         },
-        "triage": {"accuracy": 0.601, "escalation_recall": 0.938, "missed_escalation_count": 2, "total_escalations_true": 32, "false_escalation_count": 40},
+        "triage": {
+            "accuracy": 0.601,
+            "escalation_recall": 0.938,
+            "missed_escalation_count": 2,
+            "total_escalations_true": 32,
+            "false_escalation_count": 40,
+        },
         "judge": {"overall_score": 4.5},
     }
     agreement = {
@@ -158,13 +174,22 @@ def test_write_benchmark_summary_json_schema(tmp_path, monkeypatch):
     # The confusion matrix compute_intent_metrics() has always computed
     # (src/eval/metrics.py) must pass through unmodified -- previously
     # nothing downstream ever read this field at all.
-    assert summary["intent"]["production"]["labels"] == ["ACCOUNT_BILLING_ICLOUD", "HARDWARE_AND_BATTERY", "OUT_OF_SCOPE_AMBIGUOUS"]
+    assert summary["intent"]["production"]["labels"] == [
+        "ACCOUNT_BILLING_ICLOUD",
+        "HARDWARE_AND_BATTERY",
+        "OUT_OF_SCOPE_AMBIGUOUS",
+    ]
     assert summary["intent"]["production"]["confusion_matrix"] == [[10, 0, 2], [0, 12, 3], [2, 3, 15]]
 
 
 def test_abbreviate_labels_are_unique_and_short():
-    labels = ["ACCOUNT_BILLING_ICLOUD", "HARDWARE_AND_BATTERY", "HOW_TO_CONFIGURATION",
-              "OS_SOFTWARE_TROUBLESHOOTING", "OUT_OF_SCOPE_AMBIGUOUS"]
+    labels = [
+        "ACCOUNT_BILLING_ICLOUD",
+        "HARDWARE_AND_BATTERY",
+        "HOW_TO_CONFIGURATION",
+        "OS_SOFTWARE_TROUBLESHOOTING",
+        "OUT_OF_SCOPE_AMBIGUOUS",
+    ]
     abbrevs = report_generator._abbreviate_labels(labels)
     assert len(set(abbrevs.values())) == len(labels), "abbreviations must be unique per label"
     for lbl, abbr in abbrevs.items():
@@ -233,16 +258,24 @@ def test_generate_markdown_report_uses_real_latency_not_hardcoded_estimate(tmp_p
         m["rouge"] = {"mean_rouge1": 0.15, "mean_rougeL": 0.16}
 
     with_measurement = report_generator.generate_markdown_report(
-        trivial_metrics=trivial, simple_metrics=simple, prod_metrics=prod,
-        judge_metrics=prod["judge"], agreement_metrics=agreement, top_failures=[],
+        trivial_metrics=trivial,
+        simple_metrics=simple,
+        prod_metrics=prod,
+        judge_metrics=prod["judge"],
+        agreement_metrics=agreement,
+        top_failures=[],
         latency_p95_ms=44.09,
     )
     assert "44.1 ms" in with_measurement
     assert "< 35 ms" not in with_measurement
 
     without_measurement = report_generator.generate_markdown_report(
-        trivial_metrics=trivial, simple_metrics=simple, prod_metrics=prod,
-        judge_metrics=prod["judge"], agreement_metrics=agreement, top_failures=[],
+        trivial_metrics=trivial,
+        simple_metrics=simple,
+        prod_metrics=prod,
+        judge_metrics=prod["judge"],
+        agreement_metrics=agreement,
+        top_failures=[],
     )
     assert "unmeasured estimate" in without_measurement
 
@@ -259,7 +292,10 @@ def test_write_benchmark_summary_json_handles_undefined_kappa(tmp_path, monkeypa
     agreement["mean_cohen_kappa"] = None
 
     summary = report_generator.write_benchmark_summary_json(
-        trivial_metrics=trivial, simple_metrics=simple, prod_metrics=prod, agreement_metrics=agreement,
+        trivial_metrics=trivial,
+        simple_metrics=simple,
+        prod_metrics=prod,
+        agreement_metrics=agreement,
     )
     assert summary["human_agreement"]["mean_cohen_kappa"] is None
 

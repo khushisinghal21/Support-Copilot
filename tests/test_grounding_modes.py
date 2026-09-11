@@ -104,9 +104,7 @@ def test_embedding_mode_degrades_to_lexical_when_no_encoder_is_available():
 
 def test_verbatim_snippet_is_grounded_by_construction_in_both_modes():
     for mode in ("lexical", "embedding"):
-        ok, score = OutputGuardrail(grounding_mode=mode).check_grounding(
-            draft=SNIPPETS[0], retrieved_snippets=SNIPPETS
-        )
+        ok, score = OutputGuardrail(grounding_mode=mode).check_grounding(draft=SNIPPETS[0], retrieved_snippets=SNIPPETS)
         assert ok is True, mode
         assert score == 1.0, mode
 

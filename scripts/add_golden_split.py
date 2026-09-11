@@ -37,7 +37,7 @@ def main() -> None:
     total = sum(counts.values())
     print(f"{GOLDEN_SET_PATH}: {total} rows ({before} already carried a split field)")
     for name, n in sorted(counts.items()):
-        print(f"  {name:>12}: {n:>4} ({n/total:.1%})")
+        print(f"  {name:>12}: {n:>4} ({n / total:.1%})")
 
     print("\nPer-stratum breakdown (true_triage_action | is_edge_case):")
     strata = {}

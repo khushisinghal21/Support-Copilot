@@ -40,7 +40,9 @@ def load_golden_dataset(limit: int | None = None, split: str | None = None) -> l
 
 @app.command()
 def run(
-    quick: bool = typer.Option(False, "--quick", "-q", help="Run on smaller 50-sample subset for ultra-fast verification"),
+    quick: bool = typer.Option(
+        False, "--quick", "-q", help="Run on smaller 50-sample subset for ultra-fast verification"
+    ),
 ):
     """Executes the complete benchmark evaluation comparing Proposed System against 2 Baselines."""
     start_total = time.perf_counter()
@@ -50,17 +52,19 @@ def run(
     total_n = counts.get(HELDOUT, 0) + counts.get(CALIBRATION, 0)
     limit = 50 if quick else len(heldout_rows)
 
-    console.print(Panel(
-        f"[bold cyan]Hiver SDE Intern Benchmark Evaluation Runner[/bold cyan]\n"
-        f"Target Brand: [bold white]{TARGET_BRAND}[/bold white]\n"
-        f"Headline Set: [bold yellow]{min(limit, len(heldout_rows))} of {counts.get(HELDOUT, 0)} HELD-OUT rows[/bold yellow]\n"
-        f"Calibration Set (thresholds tuned here, reported separately): "
-        f"[bold yellow]{counts.get(CALIBRATION, 0)} rows[/bold yellow]\n"
-        f"Golden set total: [bold white]{total_n}[/bold white]\n"
-        f"Requirement: [bold green]Reproducible in < 15 minutes[/bold green]",
-        title="[bold green]Benchmark Suite[/bold green]",
-        expand=False
-    ))
+    console.print(
+        Panel(
+            f"[bold cyan]Hiver SDE Intern Benchmark Evaluation Runner[/bold cyan]\n"
+            f"Target Brand: [bold white]{TARGET_BRAND}[/bold white]\n"
+            f"Headline Set: [bold yellow]{min(limit, len(heldout_rows))} of {counts.get(HELDOUT, 0)} HELD-OUT rows[/bold yellow]\n"
+            f"Calibration Set (thresholds tuned here, reported separately): "
+            f"[bold yellow]{counts.get(CALIBRATION, 0)} rows[/bold yellow]\n"
+            f"Golden set total: [bold white]{total_n}[/bold white]\n"
+            f"Requirement: [bold green]Reproducible in < 15 minutes[/bold green]",
+            title="[bold green]Benchmark Suite[/bold green]",
+            expand=False,
+        )
+    )
 
     data = heldout_rows[:limit]
     y_true_intent = [d["true_intent"] for d in data]
@@ -128,7 +132,9 @@ def run(
     #     ones worth quoting.
     # -------------------------------------------------------------
     console.print("[dim]Evaluating the same pipeline on the calibration split (for the generalisation gap)...[/dim]")
-    cal_tweets = [TweetInput(tweet_id=d["tweet_id"], text=d["text"], author_id=d["author_id"]) for d in calibration_rows]
+    cal_tweets = [
+        TweetInput(tweet_id=d["tweet_id"], text=d["text"], author_id=d["author_id"]) for d in calibration_rows
+    ]
     cal_responses = pipeline.batch_process(cal_tweets)
     cal_intent_metrics = compute_intent_metrics(
         [d["true_intent"] for d in calibration_rows],
@@ -192,15 +198,17 @@ def run(
     failures = []
     for d, r in zip(data, prod_responses, strict=False):
         if r.intent.primary_intent.value != d["true_intent"] or r.triage.action.value != d["true_triage_action"]:
-            failures.append({
-                "tweet_id": d["tweet_id"],
-                "text": d["text"],
-                "true_intent": d["true_intent"],
-                "pred_intent": r.intent.primary_intent.value,
-                "true_triage": d["true_triage_action"],
-                "pred_triage": r.triage.action.value,
-                "stated_reason": r.triage.stated_reason,
-            })
+            failures.append(
+                {
+                    "tweet_id": d["tweet_id"],
+                    "text": d["text"],
+                    "true_intent": d["true_intent"],
+                    "pred_intent": r.intent.primary_intent.value,
+                    "true_triage": d["true_triage_action"],
+                    "pred_triage": r.triage.action.value,
+                    "stated_reason": r.triage.stated_reason,
+                }
+            )
 
     # Previously this was a hardcoded list of 5 plausible-sounding failure
     # modes (specific frequencies, specific example queries) that had no
@@ -219,9 +227,7 @@ def run(
     # report and the JSON summary so neither one can silently disagree
     # with the other about what was actually measured.
     prod_latencies_ms = [r.execution_time_ms for r in prod_responses if r.execution_time_ms is not None]
-    latency_p95_ms = (
-        round(float(np.percentile(prod_latencies_ms, 95)), 2) if prod_latencies_ms else None
-    )
+    latency_p95_ms = round(float(np.percentile(prod_latencies_ms, 95)), 2) if prod_latencies_ms else None
 
     # -------------------------------------------------------------
     # 6. Generate Formal Report docs/REPORT.md
@@ -277,24 +283,24 @@ def run(
     )
     table.add_row(
         "Intent Accuracy",
-        f"{b1_intent_metrics['accuracy']*100:.1f}%",
-        f"{b2_intent_metrics['accuracy']*100:.1f}%",
-        f"{prod_intent_metrics['accuracy']*100:.1f}%",
-        f"{(prod_intent_metrics['accuracy'] - b2_intent_metrics['accuracy'])*100:+.1f}%",
+        f"{b1_intent_metrics['accuracy'] * 100:.1f}%",
+        f"{b2_intent_metrics['accuracy'] * 100:.1f}%",
+        f"{prod_intent_metrics['accuracy'] * 100:.1f}%",
+        f"{(prod_intent_metrics['accuracy'] - b2_intent_metrics['accuracy']) * 100:+.1f}%",
     )
     table.add_row(
         "Triage Accuracy",
-        f"{b1_triage_metrics['accuracy']*100:.1f}%",
-        f"{b2_triage_metrics['accuracy']*100:.1f}%",
-        f"{prod_triage_metrics['accuracy']*100:.1f}%",
-        f"{(prod_triage_metrics['accuracy'] - b2_triage_metrics['accuracy'])*100:+.1f}%",
+        f"{b1_triage_metrics['accuracy'] * 100:.1f}%",
+        f"{b2_triage_metrics['accuracy'] * 100:.1f}%",
+        f"{prod_triage_metrics['accuracy'] * 100:.1f}%",
+        f"{(prod_triage_metrics['accuracy'] - b2_triage_metrics['accuracy']) * 100:+.1f}%",
     )
     table.add_row(
         "Escalation Recall",
-        f"{b1_triage_metrics['escalation_recall']*100:.1f}%",
-        f"{b2_triage_metrics['escalation_recall']*100:.1f}%",
-        f"{prod_triage_metrics['escalation_recall']*100:.1f}%",
-        f"{(prod_triage_metrics['escalation_recall'] - b2_triage_metrics['escalation_recall'])*100:+.1f}%",
+        f"{b1_triage_metrics['escalation_recall'] * 100:.1f}%",
+        f"{b2_triage_metrics['escalation_recall'] * 100:.1f}%",
+        f"{prod_triage_metrics['escalation_recall'] * 100:.1f}%",
+        f"{(prod_triage_metrics['escalation_recall'] - b2_triage_metrics['escalation_recall']) * 100:+.1f}%",
     )
     # Denominator was a hardcoded literal "/ 30" regardless of how many true
     # ESCALATE rows the loaded golden set actually contained. All three
@@ -308,7 +314,7 @@ def run(
         f"[bold green]{prod_triage_metrics['missed_escalation_count']} / {total_esc_true}[/bold green]",
         f"{(b2_triage_metrics['missed_escalation_count'] - prod_triage_metrics['missed_escalation_count']):+d}",
     )
-    rouge_lift = prod_rouge['mean_rougeL'] - b2_rouge['mean_rougeL']
+    rouge_lift = prod_rouge["mean_rougeL"] - b2_rouge["mean_rougeL"]
     table.add_row(
         "ROUGE-L Grounding Score",
         f"{b1_rouge['mean_rougeL']:.4f}",
@@ -316,7 +322,7 @@ def run(
         f"{prod_rouge['mean_rougeL']:.4f}",
         f"{rouge_lift:+.4f}",
     )
-    judge_lift = judge_results['overall_score'] - b2_judge_results['overall_score']
+    judge_lift = judge_results["overall_score"] - b2_judge_results["overall_score"]
     table.add_row(
         "LLM Judge Quality (1-5)",
         f"{b1_judge_results['overall_score']:.1f} / 5.0",
@@ -343,7 +349,7 @@ def run(
         ("Triage Accuracy", cal_triage_metrics["accuracy"], prod_triage_metrics["accuracy"]),
         ("Escalation Recall", cal_triage_metrics["escalation_recall"], prod_triage_metrics["escalation_recall"]),
     ):
-        gap_table.add_row(label, f"{cal_v*100:.1f}%", f"{held_v*100:.1f}%", f"{(held_v - cal_v)*100:+.1f}%")
+        gap_table.add_row(label, f"{cal_v * 100:.1f}%", f"{held_v * 100:.1f}%", f"{(held_v - cal_v) * 100:+.1f}%")
     console.print(gap_table)
     console.print(
         "[dim]A held-out number below its calibration counterpart is the expected direction: "
@@ -364,7 +370,10 @@ def run(
     cm_matrix = prod_intent_metrics.get("confusion_matrix", [])
     if cm_labels and cm_matrix:
         abbrevs = _abbreviate_labels(cm_labels)
-        cm_table = Table(title="[bold magenta]Production Intent Confusion Matrix (rows=true, cols=predicted)[/bold magenta]", show_header=True)
+        cm_table = Table(
+            title="[bold magenta]Production Intent Confusion Matrix (rows=true, cols=predicted)[/bold magenta]",
+            show_header=True,
+        )
         cm_table.add_column("True \\ Pred", style="cyan", no_wrap=True)
         for lbl in cm_labels:
             cm_table.add_column(abbrevs[lbl], justify="center")
@@ -372,7 +381,9 @@ def run(
             row_cells = []
             for j, _ in enumerate(cm_labels):
                 count = cm_matrix[i][j]
-                row_cells.append(f"[bold green]{count}[/bold green]" if i == j else (str(count) if count else "[dim]-[/dim]"))
+                row_cells.append(
+                    f"[bold green]{count}[/bold green]" if i == j else (str(count) if count else "[dim]-[/dim]")
+                )
             cm_table.add_row(f"{abbrevs[true_label]}", *row_cells)
         console.print(cm_table)
         console.print("[dim]" + "  ".join(f"{v}={k}" for k, v in abbrevs.items()) + "[/dim]")

@@ -35,6 +35,7 @@ def _read(rel: str) -> str:
 # Numeric constants
 # ---------------------------------------------------------------------------
 
+
 def test_decision_log_temperature_matches_the_classifier():
     import inspect
 
@@ -100,6 +101,7 @@ def test_readme_states_which_split_the_numbers_come_from():
 # ---------------------------------------------------------------------------
 # Behavioural claims
 # ---------------------------------------------------------------------------
+
 
 def test_readme_flow_diagram_puts_the_safety_gate_before_generation():
     """The diagram claimed this while the code did the opposite for the whole

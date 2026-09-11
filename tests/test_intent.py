@@ -73,4 +73,3 @@ def test_semantic_classifier_latency(classifier):
         times.append((time.perf_counter() - start) * 1000.0)
     # Best steady-state inference time on CPU must be well under 100ms
     assert min(times) < 100.0
-

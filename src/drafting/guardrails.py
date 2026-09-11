@@ -74,10 +74,44 @@ PII_SOLICITATION_PATTERN = re.compile(
 URL_EXTRACTOR = re.compile(r"https?://\S+|apple\.co/\S+|reportaproblem\.apple\.com\S*|iforgot\.apple\.com\S*")
 
 _STOPWORDS = {
-    "the", "a", "an", "to", "and", "or", "is", "are", "we", "you", "your",
-    "us", "our", "this", "that", "it", "for", "on", "in", "of", "at",
-    "please", "let", "with", "can", "will", "be", "has", "have", "help",
-    "would", "like", "here", "check", "out", "we'd", "we're", "let's",
+    "the",
+    "a",
+    "an",
+    "to",
+    "and",
+    "or",
+    "is",
+    "are",
+    "we",
+    "you",
+    "your",
+    "us",
+    "our",
+    "this",
+    "that",
+    "it",
+    "for",
+    "on",
+    "in",
+    "of",
+    "at",
+    "please",
+    "let",
+    "with",
+    "can",
+    "will",
+    "be",
+    "has",
+    "have",
+    "help",
+    "would",
+    "like",
+    "here",
+    "check",
+    "out",
+    "we'd",
+    "we're",
+    "let's",
 }
 
 
@@ -104,9 +138,7 @@ class OutputGuardrail:
         self.verify_links = verify_links
         self.link_check_timeout = link_check_timeout
         if grounding_mode not in ("embedding", "lexical"):
-            raise ValueError(
-                f"grounding_mode must be 'embedding' or 'lexical', got {grounding_mode!r}"
-            )
+            raise ValueError(f"grounding_mode must be 'embedding' or 'lexical', got {grounding_mode!r}")
         self.grounding_mode = grounding_mode
         self.min_grounding_similarity = min_grounding_similarity
 
@@ -286,11 +318,7 @@ class OutputGuardrail:
 
         grounding_ok, grounding_score = self.check_grounding(text, retrieved_snippets)
         if not grounding_ok:
-            _floor = (
-                self.min_grounding_similarity
-                if self.grounding_mode == "embedding"
-                else self.min_grounding_overlap
-            )
+            _floor = self.min_grounding_similarity if self.grounding_mode == "embedding" else self.min_grounding_overlap
             _measure = "embedding similarity" if self.grounding_mode == "embedding" else "lexical overlap"
             violations.append(
                 f"UNGROUNDED: Draft has only {grounding_score:.0%} {_measure} with retrieved "

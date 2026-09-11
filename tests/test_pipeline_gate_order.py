@@ -45,9 +45,7 @@ def _pipeline_with_spies():
     """A pipeline whose retriever and generator are spies, and whose classifier is
     stubbed so these tests never load an embedding model (offline + deterministic)."""
     classifier = MagicMock()
-    classifier.predict.return_value = __import__(
-        "src.models", fromlist=["IntentResult"]
-    ).IntentResult(
+    classifier.predict.return_value = __import__("src.models", fromlist=["IntentResult"]).IntentResult(
         primary_intent=__import__("src.models", fromlist=["AppleIntentEnum"]).AppleIntentEnum.HARDWARE_AND_BATTERY,
         confidence=0.91,
     )

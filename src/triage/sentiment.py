@@ -30,23 +30,42 @@ from src.config import FRUSTRATION_THRESHOLD
 # because in this domain "hacked"/"compromised" is almost never said about
 # someone else's account.
 ACCOUNT_COMPROMISE_KEYWORDS = [
-    "hacked", "compromised", "unauthorized charge", "unauthorized access",
-    "unauthorized", "identity theft",
+    "hacked",
+    "compromised",
+    "unauthorized charge",
+    "unauthorized access",
+    "unauthorized",
+    "identity theft",
 ]
 
 # Tier 1: legal/regulatory language that's rarely used in jest.
 STRONG_LEGAL_KEYWORDS = [
-    "lawyer", "attorney", "lawsuit", "police", "bbb",
-    "better business bureau", "consumer protection",
+    "lawyer",
+    "attorney",
+    "lawsuit",
+    "police",
+    "bbb",
+    "better business bureau",
+    "consumer protection",
 ]
 
 # Tier 2: words that DID produce real false positives in the audited data
 # (customers reporting a scam, or hyperbolic "suing" over a minor issue) --
 # require corroboration before they count.
 SOFT_CHURN_KEYWORDS = [
-    "sue", "suing", "fraud", "scam", "scammer", "scammed", "stole", "stolen",
-    "switching to android", "switching to samsung", "never buying apple again",
-    "canceling everything", "cancel this now",
+    "sue",
+    "suing",
+    "fraud",
+    "scam",
+    "scammer",
+    "scammed",
+    "stole",
+    "stolen",
+    "switching to android",
+    "switching to samsung",
+    "never buying apple again",
+    "canceling everything",
+    "cancel this now",
 ]
 
 # Explicit first-person victim framing -- corroborates a soft signal.
@@ -61,8 +80,16 @@ VICTIM_PHRASE_REGEX = re.compile(
 # customers use constantly about ordinary bugs, which made the original list
 # false-positive on completely mundane complaints.
 ANGER_KEYWORDS = [
-    "fucking", "fuck", "shit", "bullshit", "idiots", "unacceptable",
-    "furious", "outraged", "ripoff", "rip off",
+    "fucking",
+    "fuck",
+    "shit",
+    "bullshit",
+    "idiots",
+    "unacceptable",
+    "furious",
+    "outraged",
+    "ripoff",
+    "rip off",
 ]
 
 ACCOUNT_COMPROMISE_PATTERN = re.compile(
@@ -71,9 +98,7 @@ ACCOUNT_COMPROMISE_PATTERN = re.compile(
 STRONG_LEGAL_PATTERN = re.compile(
     r"\b(" + "|".join(re.escape(k) for k in STRONG_LEGAL_KEYWORDS) + r")\b", re.IGNORECASE
 )
-SOFT_CHURN_PATTERN = re.compile(
-    r"\b(" + "|".join(re.escape(k) for k in SOFT_CHURN_KEYWORDS) + r")\b", re.IGNORECASE
-)
+SOFT_CHURN_PATTERN = re.compile(r"\b(" + "|".join(re.escape(k) for k in SOFT_CHURN_KEYWORDS) + r")\b", re.IGNORECASE)
 ANGER_PATTERN = re.compile(r"\b(" + "|".join(re.escape(k) for k in ANGER_KEYWORDS) + r")\b", re.IGNORECASE)
 EXCLAMATION_PATTERN = re.compile(r"!{2,}|\?{2,}")
 
@@ -105,8 +130,11 @@ class SentimentAnalyzer:
 
         if soft_matches:
             corroborated = (
-                bool(compromise_matches) or bool(strong_matches)
-                or len(soft_matches) >= 2 or bool(anger_matches) or has_victim_phrase
+                bool(compromise_matches)
+                or bool(strong_matches)
+                or len(soft_matches) >= 2
+                or bool(anger_matches)
+                or has_victim_phrase
             )
             if corroborated:
                 score += 0.45 + min(0.20, (len(soft_matches) - 1) * 0.10)
@@ -131,7 +159,7 @@ class SentimentAnalyzer:
             upper_ratio = sum(1 for c in letters if c.isupper()) / len(letters)
             if upper_ratio >= 0.40:
                 score += 0.18
-                markers.append(f"UPPERCASE_SHOUTING: {round(upper_ratio*100)}%")
+                markers.append(f"UPPERCASE_SHOUTING: {round(upper_ratio * 100)}%")
 
         normalized_score = min(1.0, round(score, 2))
         return normalized_score, markers

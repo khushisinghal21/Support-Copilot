@@ -220,7 +220,10 @@ def get_benchmark_summary():
     fabricated number) when no run has happened yet in this checkout.
     """
     if not BENCHMARK_SUMMARY_JSON_PATH.exists():
-        return {"available": False, "reason": "No benchmark run yet. Run `python -m src.eval.runner` to generate docs/benchmark_summary.json."}
+        return {
+            "available": False,
+            "reason": "No benchmark run yet. Run `python -m src.eval.runner` to generate docs/benchmark_summary.json.",
+        }
     try:
         with open(BENCHMARK_SUMMARY_JSON_PATH, encoding="utf-8") as f:
             data = json.load(f)

@@ -20,9 +20,7 @@ EMAIL_REGEX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 # case number ("#100310750365" -- a real false positive found during the
 # audit). Handles +country codes and common grouping patterns without
 # claiming full E.164 coverage.
-PHONE_REGEX = re.compile(
-    r"(?<!\d)(?:\+\d{1,3}[-.\s])?(?:\(\d{2,4}\)[-.\s]?)?\d{2,4}[-.\s]\d{3,4}[-.\s]\d{3,4}(?!\d)"
-)
+PHONE_REGEX = re.compile(r"(?<!\d)(?:\+\d{1,3}[-.\s])?(?:\(\d{2,4}\)[-.\s]?)?\d{2,4}[-.\s]\d{3,4}[-.\s]\d{3,4}(?!\d)")
 CREDIT_CARD_REGEX = re.compile(r"\b(?:\d{4}[-\s]){3}\d{4}\b")
 SSN_REGEX = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 
@@ -52,7 +50,7 @@ def _is_negated(text: str, match_start: int, match_end: int | None = None, windo
     escalate identically to a genuine report. Checking the match span too
     fixes it without needing a real parser.
     """
-    lookback = text[max(0, match_start - window):match_start]
+    lookback = text[max(0, match_start - window) : match_start]
     if NEGATION_WORDS.search(lookback):
         return True
     if match_end is not None and NEGATION_WORDS.search(text[match_start:match_end]):

@@ -44,14 +44,17 @@ def process(
 
     table.add_row("Tweet ID", response.tweet_id)
     table.add_row("Input Text", text)
-    table.add_row("Classified Intent", f"[bold yellow]{response.intent.primary_intent.value}[/bold yellow] (conf: {response.intent.confidence:.2f})")
+    table.add_row(
+        "Classified Intent",
+        f"[bold yellow]{response.intent.primary_intent.value}[/bold yellow] (conf: {response.intent.confidence:.2f})",
+    )
 
     action_color = "green" if response.triage.action == TriageAction.AUTO_HANDLE else "bold red"
     table.add_row("Triage Action", f"[{action_color}]{response.triage.action.value}[/{action_color}]")
     table.add_row("Stated Reason", response.triage.stated_reason)
 
     if response.drafted_reply:
-        table.add_row("Drafted Reply", f"[italic green]\"{response.drafted_reply}\"[/italic green]")
+        table.add_row("Drafted Reply", f'[italic green]"{response.drafted_reply}"[/italic green]')
     else:
         table.add_row("Drafted Reply", "[dim italic](Withheld — Ticket Escalated to Human Agent)[/dim italic]")
 

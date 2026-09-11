@@ -22,6 +22,7 @@ from src.models import AppleIntentEnum, IntentResult, SupportResponse, TriageAct
 # Singleton construction
 # --------------------------------------------------------------------------
 
+
 def test_concurrent_cold_requests_construct_exactly_one_pipeline():
     """The regression guard for the OOM class: N threads racing get_pipeline()
     on a cold process must produce one SupportPipeline, not N."""
@@ -40,10 +41,7 @@ def test_concurrent_cold_requests_construct_exactly_one_pipeline():
 
     with patch.object(server, "SupportPipeline", side_effect=_slow_pipeline):
         results = []
-        threads = [
-            threading.Thread(target=lambda: results.append(server.get_pipeline()))
-            for _ in range(8)
-        ]
+        threads = [threading.Thread(target=lambda: results.append(server.get_pipeline())) for _ in range(8)]
         for t in threads:
             t.start()
         for t in threads:
@@ -57,6 +55,7 @@ def test_concurrent_cold_requests_construct_exactly_one_pipeline():
 # --------------------------------------------------------------------------
 # CORS
 # --------------------------------------------------------------------------
+
 
 def test_cors_never_pairs_wildcard_origin_with_credentials(monkeypatch):
     """'*' plus credentials is rejected by browsers; it must not be reachable
@@ -80,6 +79,7 @@ def test_cors_never_pairs_wildcard_origin_with_credentials(monkeypatch):
 # --------------------------------------------------------------------------
 # Rate limiting / auth
 # --------------------------------------------------------------------------
+
 
 def _stub_pipeline_response():
     return SupportResponse(
@@ -166,6 +166,7 @@ def test_health_and_scenarios_are_unauthenticated(client_with_stub_pipeline, mon
 # --------------------------------------------------------------------------
 # Audit log
 # --------------------------------------------------------------------------
+
 
 def test_decision_log_write_does_not_block_the_request_path():
     """The enqueue must return promptly even when the writer is wedged."""

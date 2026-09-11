@@ -122,27 +122,25 @@ def mine_failure_modes(failures: list[dict[str, Any]], top_n: int = 5) -> list[d
             true=example.get("true_intent") or example.get("true_triage", ""),
             pred=example.get("pred_intent") or example.get("pred_triage", ""),
         )
-        results.append({
-            "title": title,
-            "frequency": round(100 * count / total),
-            "count": count,
-            "total_failures": total,
-            "query": example.get("text", ""),
-            "actual": (
-                f"intent={example.get('pred_intent')}, triage={example.get('pred_triage')}"
-            ),
-            "expected": (
-                f"intent={example.get('true_intent')}, triage={example.get('true_triage')}"
-            ),
-            # The pipeline's own stated reason for its decision, straight from
-            # src/triage/reasons.py -- shown verbatim rather than only the
-            # category-level guess, since two failures with the same
-            # true/pred labels can have completely different real causes
-            # (e.g. a misclassified intent hard-escalated by Gate 6 looks
-            # identical to a sentiment-gate false positive unless you see
-            # the actual reason the engine gave).
-            "system_stated_reason": example.get("stated_reason") or "(none recorded)",
-            "hypothesis": info["hypothesis"],
-            "mitigation": info["mitigation"],
-        })
+        results.append(
+            {
+                "title": title,
+                "frequency": round(100 * count / total),
+                "count": count,
+                "total_failures": total,
+                "query": example.get("text", ""),
+                "actual": (f"intent={example.get('pred_intent')}, triage={example.get('pred_triage')}"),
+                "expected": (f"intent={example.get('true_intent')}, triage={example.get('true_triage')}"),
+                # The pipeline's own stated reason for its decision, straight from
+                # src/triage/reasons.py -- shown verbatim rather than only the
+                # category-level guess, since two failures with the same
+                # true/pred labels can have completely different real causes
+                # (e.g. a misclassified intent hard-escalated by Gate 6 looks
+                # identical to a sentiment-gate false positive unless you see
+                # the actual reason the engine gave).
+                "system_stated_reason": example.get("stated_reason") or "(none recorded)",
+                "hypothesis": info["hypothesis"],
+                "mitigation": info["mitigation"],
+            }
+        )
     return results

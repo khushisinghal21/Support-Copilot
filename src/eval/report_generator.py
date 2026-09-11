@@ -25,7 +25,7 @@ def _abbreviate_labels(labels: list[str]) -> dict[str, str]:
     abbrevs: dict[str, str] = {}
     for lbl in labels:
         parts = [p for p in lbl.split("_") if p]
-        base = ("".join(p[0] for p in parts).upper() or lbl[:3].upper())
+        base = "".join(p[0] for p in parts).upper() or lbl[:3].upper()
         abbr = base
         i = 2
         while abbr in used:
@@ -117,9 +117,9 @@ def generate_markdown_report(
             f"(`SPLIT_SEED={split_info.get('seed')}`), stratified `split` field. The sweep script reads the "
             f"**{split_info.get('calibration_n')} calibration rows** only; every headline number in this report is "
             f"measured on the **{split_info.get('heldout_n')} held-out rows** the thresholds were never tuned against. "
-            f"The gap is published rather than hidden: intent accuracy {_cal_ia*100:.1f}% → {_held_ia*100:.1f}% "
-            f"({(_held_ia - _cal_ia)*100:+.1f} pts) and triage accuracy {_cal_ta*100:.1f}% → {_held_ta*100:.1f}% "
-            f"({(_held_ta - _cal_ta)*100:+.1f} pts) moving from tuned-on data to held-out data. "
+            f"The gap is published rather than hidden: intent accuracy {_cal_ia * 100:.1f}% → {_held_ia * 100:.1f}% "
+            f"({(_held_ia - _cal_ia) * 100:+.1f} pts) and triage accuracy {_cal_ta * 100:.1f}% → {_held_ta * 100:.1f}% "
+            f"({(_held_ta - _cal_ta) * 100:+.1f} pts) moving from tuned-on data to held-out data. "
         )
         if _clarify_held == 0:
             split_disclosure += (
@@ -142,7 +142,9 @@ def generate_markdown_report(
     # this report's own claim. Use the real number when the caller has it;
     # fall back to the old narrative text only when no timings were passed
     # in (e.g. an older caller that hasn't been updated yet).
-    prod_latency_display = f"{latency_p95_ms:.1f} ms" if isinstance(latency_p95_ms, (int, float)) else "< 35 ms (unmeasured estimate)"
+    prod_latency_display = (
+        f"{latency_p95_ms:.1f} ms" if isinstance(latency_p95_ms, (int, float)) else "< 35 ms (unmeasured estimate)"
+    )
     confusion_matrix_markdown = _render_confusion_matrix_markdown(
         prod_metrics["intent"].get("labels", []),
         prod_metrics["intent"].get("confusion_matrix", []),
@@ -153,7 +155,7 @@ def generate_markdown_report(
 **Author**: Hiver SDE Intern Candidate
 **Target Brand**: `{TARGET_BRAND}`
 **Dataset**: Kaggle Customer Support on Twitter (`thoughtvector/customer-support-on-twitter`)
-**Golden Evaluation Set**: {gs['n']} Hand-Labelled Test Queries ({gs['n_edge']} disclosed edge cases, ~{gs['pct_edge']}%)
+**Golden Evaluation Set**: {gs["n"]} Hand-Labelled Test Queries ({gs["n_edge"]} disclosed edge cases, ~{gs["pct_edge"]}%)
 **Status**: Formal Evaluation & Verification Sign-Off
 
 ---
@@ -176,7 +178,7 @@ For Apple Support on Twitter, "good" does not mean simply generating fluent Engl
 
 ## 2. Headline Results vs. Two Baselines
 
-We evaluated three architectures across the exact same {gs['n']}-sample hand-labelled Golden Set:
+We evaluated three architectures across the exact same {gs["n"]}-sample hand-labelled Golden Set:
 1. **Baseline 1 (Trivial)**: Majority-class intent predictor (`OS_SOFTWARE_TROUBLESHOOTING`), static canned reply (*"Please restart your device"*), and always `AUTO_HANDLE`.
 2. **Baseline 2 (Simple)**: TF-IDF + Logistic Regression intent classifier, nearest-neighbor historical reply retrieval without LLM re-ranking or length guardrails, and basic keyword escalation.
 3. **Proposed System (Production)**: Dense semantic centroid classifier (`all-MiniLM-L6-v2`), ChromaDB historical resolution RAG, 280-char/whitelist guardrails, and cascading triage policy engine.
@@ -189,27 +191,27 @@ than being hidden behind a hardcoded "+" prefix.
 
 | Metric | Baseline 1 (Trivial) | Baseline 2 (Simple) | Proposed System (Production) | Absolute Lift (vs Simple) |
 | :--- | :---: | :---: | :---: | :---: |
-| **Intent Macro-F1** | {trivial_metrics['intent']['macro_f1']:.4f} | {simple_metrics['intent']['macro_f1']:.4f} | **{prod_metrics['intent']['macro_f1']:.4f}** | **{(prod_metrics['intent']['macro_f1'] - simple_metrics['intent']['macro_f1']):+.4f}** |
-| **Intent Accuracy** | {trivial_metrics['intent']['accuracy']*100:.1f}% | {simple_metrics['intent']['accuracy']*100:.1f}% | **{prod_metrics['intent']['accuracy']*100:.1f}%** | **{(prod_metrics['intent']['accuracy'] - simple_metrics['intent']['accuracy'])*100:+.1f}%** |
-| **Triage Accuracy** | {trivial_metrics['triage']['accuracy']*100:.1f}% | {simple_metrics['triage']['accuracy']*100:.1f}% | **{prod_metrics['triage']['accuracy']*100:.1f}%** | **{(prod_metrics['triage']['accuracy'] - simple_metrics['triage']['accuracy'])*100:+.1f}%** |
-| **Escalation Recall** | {trivial_metrics['triage']['escalation_recall']*100:.1f}% | {simple_metrics['triage']['escalation_recall']*100:.1f}% | **{prod_metrics['triage']['escalation_recall']*100:.1f}%** | **{(prod_metrics['triage']['escalation_recall'] - simple_metrics['triage']['escalation_recall'])*100:+.1f}%** |
-| **Missed Escalations (Safety Risk)** | {trivial_metrics['triage']['missed_escalation_count']} / {prod_metrics['triage']['total_escalations_true']} | {simple_metrics['triage']['missed_escalation_count']} / {prod_metrics['triage']['total_escalations_true']} | **{prod_metrics['triage']['missed_escalation_count']} / {prod_metrics['triage']['total_escalations_true']}** | **{(simple_metrics['triage']['missed_escalation_count'] - prod_metrics['triage']['missed_escalation_count']):+d} fewer missed** |
-| **ROUGE-L Grounding Score** | {trivial_metrics['rouge']['mean_rougeL']:.4f} | {simple_metrics['rouge']['mean_rougeL']:.4f} | **{prod_metrics['rouge']['mean_rougeL']:.4f}** | **{(prod_metrics['rouge']['mean_rougeL'] - simple_metrics['rouge']['mean_rougeL']):+.4f}** |
-| **LLM Judge Quality (1-5 Scale)** | {trivial_metrics['judge']['overall_score']:.1f} / 5.0 | {simple_metrics['judge']['overall_score']:.1f} / 5.0 | **{judge_metrics['overall_score']:.1f} / 5.0** | **{(judge_metrics['overall_score'] - simple_metrics['judge']['overall_score']):+.1f}** |
+| **Intent Macro-F1** | {trivial_metrics["intent"]["macro_f1"]:.4f} | {simple_metrics["intent"]["macro_f1"]:.4f} | **{prod_metrics["intent"]["macro_f1"]:.4f}** | **{(prod_metrics["intent"]["macro_f1"] - simple_metrics["intent"]["macro_f1"]):+.4f}** |
+| **Intent Accuracy** | {trivial_metrics["intent"]["accuracy"] * 100:.1f}% | {simple_metrics["intent"]["accuracy"] * 100:.1f}% | **{prod_metrics["intent"]["accuracy"] * 100:.1f}%** | **{(prod_metrics["intent"]["accuracy"] - simple_metrics["intent"]["accuracy"]) * 100:+.1f}%** |
+| **Triage Accuracy** | {trivial_metrics["triage"]["accuracy"] * 100:.1f}% | {simple_metrics["triage"]["accuracy"] * 100:.1f}% | **{prod_metrics["triage"]["accuracy"] * 100:.1f}%** | **{(prod_metrics["triage"]["accuracy"] - simple_metrics["triage"]["accuracy"]) * 100:+.1f}%** |
+| **Escalation Recall** | {trivial_metrics["triage"]["escalation_recall"] * 100:.1f}% | {simple_metrics["triage"]["escalation_recall"] * 100:.1f}% | **{prod_metrics["triage"]["escalation_recall"] * 100:.1f}%** | **{(prod_metrics["triage"]["escalation_recall"] - simple_metrics["triage"]["escalation_recall"]) * 100:+.1f}%** |
+| **Missed Escalations (Safety Risk)** | {trivial_metrics["triage"]["missed_escalation_count"]} / {prod_metrics["triage"]["total_escalations_true"]} | {simple_metrics["triage"]["missed_escalation_count"]} / {prod_metrics["triage"]["total_escalations_true"]} | **{prod_metrics["triage"]["missed_escalation_count"]} / {prod_metrics["triage"]["total_escalations_true"]}** | **{(simple_metrics["triage"]["missed_escalation_count"] - prod_metrics["triage"]["missed_escalation_count"]):+d} fewer missed** |
+| **ROUGE-L Grounding Score** | {trivial_metrics["rouge"]["mean_rougeL"]:.4f} | {simple_metrics["rouge"]["mean_rougeL"]:.4f} | **{prod_metrics["rouge"]["mean_rougeL"]:.4f}** | **{(prod_metrics["rouge"]["mean_rougeL"] - simple_metrics["rouge"]["mean_rougeL"]):+.4f}** |
+| **LLM Judge Quality (1-5 Scale)** | {trivial_metrics["judge"]["overall_score"]:.1f} / 5.0 | {simple_metrics["judge"]["overall_score"]:.1f} / 5.0 | **{judge_metrics["overall_score"]:.1f} / 5.0** | **{(judge_metrics["overall_score"] - simple_metrics["judge"]["overall_score"]):+.1f}** |
 | **P95 Latency (CPU)** | < 1 ms (unmeasured estimate) | ~5 ms (unmeasured estimate) | **{prod_latency_display}** | Real-time ready |
 
 ---
 
 ## 3. LLM-as-a-Judge & Human Agreement Calibration
 
-To check whether the LLM-as-a-judge rubric can be trusted, we compared judge scores against **{agreement_metrics['num_samples']} human-scored query/reply pairs** (see `data/README.md` for how this sample was built and its disclosed limitations -- it is an AI-assisted reading pass against the rubric, not a blind independent annotator).
+To check whether the LLM-as-a-judge rubric can be trusted, we compared judge scores against **{agreement_metrics["num_samples"]} human-scored query/reply pairs** (see `data/README.md` for how this sample was built and its disclosed limitations -- it is an AI-assisted reading pass against the rubric, not a blind independent annotator).
 
-- **Sample Size**: {agreement_metrics['num_samples']} hand-annotated cases
-- **Cohen's Kappa (Groundedness)**: $\kappa = {_fmt_kappa(agreement_metrics['cohen_kappa_groundedness'])}$
-- **Cohen's Kappa (Safety)**: $\kappa = {_fmt_kappa(agreement_metrics['cohen_kappa_safety'])}$
-- **Mean Cohen's Kappa**: **$\kappa = {_fmt_kappa(agreement_metrics['mean_cohen_kappa'])}$**
-- **Interpretation**: **{agreement_metrics['agreement_interpretation']}**
-- **Exact Agreement (Safety Gate)**: **{agreement_metrics['exact_agreement_safety_pct']:.1f}%**
+- **Sample Size**: {agreement_metrics["num_samples"]} hand-annotated cases
+- **Cohen's Kappa (Groundedness)**: $\kappa = {_fmt_kappa(agreement_metrics["cohen_kappa_groundedness"])}$
+- **Cohen's Kappa (Safety)**: $\kappa = {_fmt_kappa(agreement_metrics["cohen_kappa_safety"])}$
+- **Mean Cohen's Kappa**: **$\kappa = {_fmt_kappa(agreement_metrics["mean_cohen_kappa"])}$**
+- **Interpretation**: **{agreement_metrics["agreement_interpretation"]}**
+- **Exact Agreement (Safety Gate)**: **{agreement_metrics["exact_agreement_safety_pct"]:.1f}%**
 
 > [!WARNING]
 > Landis & Koch (1977) establish $\kappa \ge 0.61$ as substantial agreement. **This run's measured kappa does not clear that bar** (see the interpretation above) -- a previous version of this codebase silently floored the reported kappa at 0.72 (and safety kappa at 0.70) whenever exact agreement crossed 75%, which is why an earlier report could claim "high alignment" regardless of what was actually measured. Those floors have been removed; the numbers above are the real, unmodified output of `src/eval/human_agreement.py`. A mediocre or negative kappa here means the judge's numeric scores should not be trusted on their own -- see Section 5 for what this implies about the headline numbers above.
@@ -237,14 +239,14 @@ Even with strong headline metrics, a thorough engineering audit requires identif
             "Section 5) rather than as evidence the system is production-ready.\n\n"
         )
     for i, fail in enumerate(top_failures, 1):
-        report_content += f"""### Failure Mode {i}: {fail['title']}
-- **Observed Frequency**: {fail['count']} of {fail['total_failures']} failures on this run (~{fail['frequency']}%)
-- **Real Example Query**: *"{fail['query']}"*
-- **Actual System Output**: {fail['actual']}
-- **Expected (Golden Label)**: {fail['expected']}
-- **System's Stated Reason**: {fail['system_stated_reason']}
-- **Root Cause Hypothesis**: {fail['hypothesis']}
-- **Mitigation Strategy**: {fail['mitigation']}
+        report_content += f"""### Failure Mode {i}: {fail["title"]}
+- **Observed Frequency**: {fail["count"]} of {fail["total_failures"]} failures on this run (~{fail["frequency"]}%)
+- **Real Example Query**: *"{fail["query"]}"*
+- **Actual System Output**: {fail["actual"]}
+- **Expected (Golden Label)**: {fail["expected"]}
+- **System's Stated Reason**: {fail["system_stated_reason"]}
+- **Root Cause Hypothesis**: {fail["hypothesis"]}
+- **Mitigation Strategy**: {fail["mitigation"]}
 
 """
 
@@ -252,16 +254,16 @@ Even with strong headline metrics, a thorough engineering audit requires identif
 
 ## 5. "What is Misleading About My Headline Number?" (Mandatory Section)
 
-While our **Macro-F1 of {prod_metrics['intent']['macro_f1']:.4f}** and **Triage Accuracy of {prod_metrics['triage']['accuracy']*100:.1f}%** may look strong in isolation, headline numbers conceal subtle real-world failure patterns -- and, per Section 3, the human-agreement kappa on the judge itself is currently weak, which should temper confidence in any of the judge-derived numbers above:
+While our **Macro-F1 of {prod_metrics["intent"]["macro_f1"]:.4f}** and **Triage Accuracy of {prod_metrics["triage"]["accuracy"] * 100:.1f}%** may look strong in isolation, headline numbers conceal subtle real-world failure patterns -- and, per Section 3, the human-agreement kappa on the judge itself is currently weak, which should temper confidence in any of the judge-derived numbers above:
 
 1. **The Golden Set's Escalation Rate Is Deliberately ~20x the Real Rate**:
-   Of the {prod_metrics['triage']['total_escalations_true']} true-ESCALATE rows in this {gs['n']}-row golden set (~{round(100*prod_metrics['triage']['total_escalations_true']/gs['n']) if gs['n'] else 0}%), the large majority were manually reviewed and, in several cases, authored as adversarial examples (`source: authored_adversarial` in `data/golden_eval_set.jsonl`) -- because an unweighted random sample of the real Kaggle pairs surfaced only ~9 genuine escalation-worthy tweets out of 995 (well under 1%). This oversampling was a deliberate, disclosed choice (see `data/README.md`) to get enough escalation examples to measure precision/recall at all -- but it means Escalation Recall/Precision above describe performance on an escalation-enriched sample, not the real-world base rate. On real unfiltered traffic, the same false-escalation rules would fire far less often in absolute terms, and the cost of a single missed escalation (safety-relevant) is not comparable to the cost of a single false one (ticket volume) -- a blended "Triage Accuracy" number hides that asymmetry entirely.
+   Of the {prod_metrics["triage"]["total_escalations_true"]} true-ESCALATE rows in this {gs["n"]}-row golden set (~{round(100 * prod_metrics["triage"]["total_escalations_true"] / gs["n"]) if gs["n"] else 0}%), the large majority were manually reviewed and, in several cases, authored as adversarial examples (`source: authored_adversarial` in `data/golden_eval_set.jsonl`) -- because an unweighted random sample of the real Kaggle pairs surfaced only ~9 genuine escalation-worthy tweets out of 995 (well under 1%). This oversampling was a deliberate, disclosed choice (see `data/README.md`) to get enough escalation examples to measure precision/recall at all -- but it means Escalation Recall/Precision above describe performance on an escalation-enriched sample, not the real-world base rate. On real unfiltered traffic, the same false-escalation rules would fire far less often in absolute terms, and the cost of a single missed escalation (safety-relevant) is not comparable to the cost of a single false one (ticket volume) -- a blended "Triage Accuracy" number hides that asymmetry entirely.
 
 2. **Isolated Single-Turn Evaluation**:
    Our evaluation measures single-turn tweet resolution. Real support threads often span 4–7 turns where customers clarify details ("Oh wait, it's actually an iPad, not an iPhone"). High single-turn groundedness does not guarantee conversational coherence across long context windows.
 
 3. **Conservative Over-Escalation Bias**:
-   To ensure zero safety violations, our triage threshold aggressively errs on the side of caution. While this achieves a near-perfect Missed Escalation Rate ({prod_metrics['triage']['missed_escalation_count']} missed safety cases), it inflates human agent ticket volume by ~{prod_metrics['triage']['false_escalation_count']} false escalations. In an enterprise setting, this increases operational cost.
+   To ensure zero safety violations, our triage threshold aggressively errs on the side of caution. While this achieves a near-perfect Missed Escalation Rate ({prod_metrics["triage"]["missed_escalation_count"]} missed safety cases), it inflates human agent ticket volume by ~{prod_metrics["triage"]["false_escalation_count"]} false escalations. In an enterprise setting, this increases operational cost.
 
 4. **Kaggle Dataset Age & Link Rot**:
    The `customer-support-on-twitter` dataset dates to 2017–2018 (iOS 11 era). References to `apple.co` URLs and specific iOS menu hierarchies may have evolved (e.g., Settings layouts in iOS 17/18). High historical similarity measures fidelity to 2018 procedures rather than current 2026 support documentation.

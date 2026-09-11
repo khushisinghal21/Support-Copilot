@@ -14,6 +14,7 @@ Methodology (documented honestly in data/README.md alongside this):
 5. reference_resolution for real examples is the ACTUAL historical agent reply (best possible
    grounding reference). For authored examples it's a brand-consistent reply we write.
 """
+
 import json
 import random
 import re
@@ -60,6 +61,7 @@ HUMAN_REQUEST_RE = re.compile(
     re.IGNORECASE,
 )
 
+
 def heuristic_triage(text: str):
     """Returns (action, reason_code, matched_rule) for LABELLING purposes."""
     if EMAIL_RE.search(text) or PHONE_RE.search(text):
@@ -96,30 +98,31 @@ def main():
             continue
         intent = heuristic_intent(text)
         action, reason, rule = heuristic_triage(text)
-        labeled.append({
-            "source_tweet_id": p["tweet_id"],
-            "text": text,
-            "real_agent_reply": p["agent_reply"],
-            "heuristic_intent": intent,
-            "ingest_time_intent": p.get("intent"),  # from the (circular) classifier, for comparison only
-            "triage_action": action,
-            "reason_code": reason,
-            "matched_rule": rule,
-        })
+        labeled.append(
+            {
+                "source_tweet_id": p["tweet_id"],
+                "text": text,
+                "real_agent_reply": p["agent_reply"],
+                "heuristic_intent": intent,
+                "ingest_time_intent": p.get("intent"),  # from the (circular) classifier, for comparison only
+                "triage_action": action,
+                "reason_code": reason,
+                "matched_rule": rule,
+            }
+        )
 
     by_intent = defaultdict(list)
     for item in labeled:
         by_intent[item["heuristic_intent"]].append(item)
 
-    disagreements = sum(
-        1 for it in labeled if it["heuristic_intent"] != it["ingest_time_intent"]
+    disagreements = sum(1 for it in labeled if it["heuristic_intent"] != it["ingest_time_intent"])
+    print(
+        f"Heuristic vs ingest-time-classifier intent disagreement: {disagreements}/{len(labeled)}"
+        f" ({disagreements / len(labeled) * 100:.1f}%) -- expected, they're independent methods"
     )
-    print(f"Heuristic vs ingest-time-classifier intent disagreement: {disagreements}/{len(labeled)}"
-          f" ({disagreements/len(labeled)*100:.1f}%) -- expected, they're independent methods")
 
     escalate_candidates = [it for it in labeled if it["triage_action"] == "ESCALATE"]
-    print(f"\n{len(escalate_candidates)} real-data ESCALATE candidates found by heuristic "
-          f"(manually reviewed below):")
+    print(f"\n{len(escalate_candidates)} real-data ESCALATE candidates found by heuristic (manually reviewed below):")
     for it in escalate_candidates:
         print(f"  [{it['reason_code']}] {it['text'][:140]}")
 

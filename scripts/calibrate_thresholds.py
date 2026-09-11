@@ -124,8 +124,10 @@ def _sweep_confidence(data: list[tuple[float, bool]]) -> None:
         j = recall_wrong - fp_rate
         if j > best_score:
             best_score, best_tau = j, tau
-        print(f"{tau:>6.2f} | {caught_wrong:>6}/{total_wrong:<3} ({recall_wrong:>5.1%})   | "
-              f"{escalated_correct:>6}/{total_correct:<3} ({fp_rate:>5.1%})")
+        print(
+            f"{tau:>6.2f} | {caught_wrong:>6}/{total_wrong:<3} ({recall_wrong:>5.1%})   | "
+            f"{escalated_correct:>6}/{total_correct:<3} ({fp_rate:>5.1%})"
+        )
     print(f"\nSuggested MIN_INTENT_CONFIDENCE (max recall-minus-false-positive-rate): {best_tau}")
     print("Current src/config.py value: MIN_INTENT_CONFIDENCE (see that file)")
 
@@ -144,18 +146,17 @@ def _sweep_similarity(data: list[tuple[float, bool]]) -> None:
         j = recall - fp_rate
         if j > best_score:
             best_score, best_tau = j, tau
-        print(f"{tau:>6.2f} | {below_escalate:>6}/{total_escalate:<3} ({recall:>5.1%})     | "
-              f"{below_auto:>6}/{total_auto:<3} ({fp_rate:>5.1%})")
+        print(
+            f"{tau:>6.2f} | {below_escalate:>6}/{total_escalate:<3} ({recall:>5.1%})     | "
+            f"{below_auto:>6}/{total_auto:<3} ({fp_rate:>5.1%})"
+        )
     print(f"\nSuggested MIN_RETRIEVAL_SIMILARITY (max recall-minus-false-positive-rate): {best_tau}")
     print("Current src/config.py value: MIN_RETRIEVAL_SIMILARITY (see that file)")
 
 
 def main():
     rows = _load_golden()
-    print(
-        f"Loaded {len(rows)} CALIBRATION-split rows "
-        f"(the held-out rows are deliberately not read by this script)"
-    )
+    print(f"Loaded {len(rows)} CALIBRATION-split rows (the held-out rows are deliberately not read by this script)")
 
     print("Instantiating SemanticCentroidClassifier (downloads all-MiniLM-L6-v2 on first run)...")
     clf = SemanticCentroidClassifier()

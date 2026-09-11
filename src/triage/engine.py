@@ -30,7 +30,6 @@ first; the code did not match the diagram. Gate order and every reason code are
 preserved exactly as they were.
 """
 
-
 from src.config import MIN_INTENT_CONFIDENCE, MIN_RETRIEVAL_SIMILARITY
 from src.models import (
     AppleIntentEnum,
@@ -105,8 +104,7 @@ class TriageEngine:
             return TriageDecision(
                 action=TriageAction.ESCALATE,
                 stated_reason=format_stated_reason(
-                    EscalationReasonCode.PROMPT_INJECTION_SUSPECTED,
-                    f"Triggered rules: {injection_rules}"
+                    EscalationReasonCode.PROMPT_INJECTION_SUSPECTED, f"Triggered rules: {injection_rules}"
                 ),
                 reason_code=EscalationReasonCode.PROMPT_INJECTION_SUSPECTED,
                 risk_score=0.90,
@@ -119,8 +117,7 @@ class TriageEngine:
             return TriageDecision(
                 action=TriageAction.ESCALATE,
                 stated_reason=format_stated_reason(
-                    EscalationReasonCode.HARDWARE_PHYSICAL_DAMAGE,
-                    f"Triggered safety rules: {hazard_rules}"
+                    EscalationReasonCode.HARDWARE_PHYSICAL_DAMAGE, f"Triggered safety rules: {hazard_rules}"
                 ),
                 reason_code=EscalationReasonCode.HARDWARE_PHYSICAL_DAMAGE,
                 risk_score=1.0,
@@ -133,8 +130,7 @@ class TriageEngine:
             return TriageDecision(
                 action=TriageAction.ESCALATE,
                 stated_reason=format_stated_reason(
-                    EscalationReasonCode.PII_SECURITY_SENSITIVE,
-                    f"Customer posted sensitive PII: {pii_rules}"
+                    EscalationReasonCode.PII_SECURITY_SENSITIVE, f"Customer posted sensitive PII: {pii_rules}"
                 ),
                 reason_code=EscalationReasonCode.PII_SECURITY_SENSITIVE,
                 risk_score=0.95,
@@ -147,7 +143,7 @@ class TriageEngine:
                 action=TriageAction.ESCALATE,
                 stated_reason=format_stated_reason(
                     EscalationReasonCode.HUMAN_AGENT_REQUESTED,
-                    "Customer explicitly asked to speak with a human support agent"
+                    "Customer explicitly asked to speak with a human support agent",
                 ),
                 reason_code=EscalationReasonCode.HUMAN_AGENT_REQUESTED,
                 risk_score=0.75,
@@ -161,7 +157,7 @@ class TriageEngine:
                 action=TriageAction.ESCALATE,
                 stated_reason=format_stated_reason(
                     EscalationReasonCode.HIGH_FRUSTRATION_CHURN_RISK,
-                    f"Frustration score {frustration_score:.2f} exceeded threshold {self.sentiment_analyzer.threshold:.2f} ({sentiment_markers})"
+                    f"Frustration score {frustration_score:.2f} exceeded threshold {self.sentiment_analyzer.threshold:.2f} ({sentiment_markers})",
                 ),
                 reason_code=EscalationReasonCode.HIGH_FRUSTRATION_CHURN_RISK,
                 risk_score=frustration_score,
@@ -193,12 +189,15 @@ class TriageEngine:
         guardrail_violations = guardrail_violations or []
 
         # Gate 6: Intent Uncertainty / Ambiguous Topic (hard floor)
-        if intent_res.primary_intent == AppleIntentEnum.OUT_OF_SCOPE_AMBIGUOUS or intent_res.confidence < self.min_intent_confidence:
+        if (
+            intent_res.primary_intent == AppleIntentEnum.OUT_OF_SCOPE_AMBIGUOUS
+            or intent_res.confidence < self.min_intent_confidence
+        ):
             return TriageDecision(
                 action=TriageAction.ESCALATE,
                 stated_reason=format_stated_reason(
                     EscalationReasonCode.LOW_CONFIDENCE_AMBIGUOUS,
-                    f"Intent '{intent_res.primary_intent.value}' has low confidence ({intent_res.confidence:.2f} < {self.min_intent_confidence:.2f})"
+                    f"Intent '{intent_res.primary_intent.value}' has low confidence ({intent_res.confidence:.2f} < {self.min_intent_confidence:.2f})",
                 ),
                 reason_code=EscalationReasonCode.LOW_CONFIDENCE_AMBIGUOUS,
                 risk_score=0.70,
@@ -225,7 +224,7 @@ class TriageEngine:
                 stated_reason=format_stated_reason(
                     EscalationReasonCode.AMBIGUOUS_DEVICE_NEEDS_CLARIFICATION,
                     f"Intent '{intent_res.primary_intent.value}' at moderate confidence "
-                    f"({intent_res.confidence:.2f}) with no device named in the text"
+                    f"({intent_res.confidence:.2f}) with no device named in the text",
                 ),
                 reason_code=EscalationReasonCode.AMBIGUOUS_DEVICE_NEEDS_CLARIFICATION,
                 risk_score=0.35,
@@ -238,7 +237,7 @@ class TriageEngine:
                 action=TriageAction.ESCALATE,
                 stated_reason=format_stated_reason(
                     EscalationReasonCode.LOW_CONFIDENCE_AMBIGUOUS,
-                    f"Historical grounding similarity ({rag_res.max_similarity:.2f} < {self.min_retrieval_similarity:.2f}) insufficient for auto-handling"
+                    f"Historical grounding similarity ({rag_res.max_similarity:.2f} < {self.min_retrieval_similarity:.2f}) insufficient for auto-handling",
                 ),
                 reason_code=EscalationReasonCode.LOW_CONFIDENCE_AMBIGUOUS,
                 risk_score=0.65,
@@ -252,10 +251,7 @@ class TriageEngine:
             reason_code = _map_guardrail_reason(guardrail_violations)
             return TriageDecision(
                 action=TriageAction.ESCALATE,
-                stated_reason=format_stated_reason(
-                    reason_code,
-                    f"Safety violations: {guardrail_violations}"
-                ),
+                stated_reason=format_stated_reason(reason_code, f"Safety violations: {guardrail_violations}"),
                 reason_code=reason_code,
                 risk_score=0.85,
                 triggered_rules=guardrail_violations,

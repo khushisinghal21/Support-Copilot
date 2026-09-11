@@ -34,17 +34,19 @@ def test_extract_urls_finds_bare_apple_co_and_full_urls():
 
 
 def test_verify_url_marks_real_specific_page_as_verified():
-    with patch("urllib.request.urlopen", return_value=_fake_response(
-        status=200, geturl="https://support.apple.com/kb/HT201264"
-    )):
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_fake_response(status=200, geturl="https://support.apple.com/kb/HT201264"),
+    ):
         result = verify_url("support.apple.com/kb/HT201264")
     assert result.status == "verified"
 
 
 def test_verify_url_marks_dead_link_as_broken():
-    with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError(
-        "https://apple.co/nonexistent", 404, "Not Found", None, None
-    )):
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=urllib.error.HTTPError("https://apple.co/nonexistent", 404, "Not Found", None, None),
+    ):
         result = verify_url("apple.co/nonexistent")
     assert result.status == "broken"
     assert "404" in result.detail
@@ -54,9 +56,7 @@ def test_verify_url_marks_bounce_to_domain_root_as_suspicious():
     """The real apple.co/directmessage case: a 2xx/3xx that looks fine, but
     the specific path never existed and the server bounces to the bare
     domain root instead of a 404."""
-    with patch("urllib.request.urlopen", return_value=_fake_response(
-        status=200, geturl="https://www.apple.com/"
-    )):
+    with patch("urllib.request.urlopen", return_value=_fake_response(status=200, geturl="https://www.apple.com/")):
         result = verify_url("apple.co/directmessage")
     assert result.status == "suspicious_redirect"
 
@@ -82,9 +82,10 @@ def test_guardrail_link_check_is_off_by_default():
 
 def test_guardrail_link_check_flags_broken_link_when_enabled():
     guardrail = OutputGuardrail(verify_links=True)
-    with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError(
-        "https://apple.co/fake", 404, "Not Found", None, None
-    )):
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=urllib.error.HTTPError("https://apple.co/fake", 404, "Not Found", None, None),
+    ):
         ok, problems = guardrail.check_link_reachability("Visit apple.co/fake for help.")
     assert ok is False
     assert len(problems) == 1
@@ -93,9 +94,7 @@ def test_guardrail_link_check_flags_broken_link_when_enabled():
 
 def test_guardrail_evaluate_escalates_on_unverified_link_when_enabled():
     guardrail = OutputGuardrail(verify_links=True)
-    with patch("urllib.request.urlopen", return_value=_fake_response(
-        status=200, geturl="https://www.apple.com/"
-    )):
+    with patch("urllib.request.urlopen", return_value=_fake_response(status=200, geturl="https://www.apple.com/")):
         passed, violations = guardrail.evaluate("We'd like to help -- see apple.co/directmessage for next steps.")
     assert passed is False
     assert any("UNVERIFIED_LINK" in v for v in violations)
@@ -103,9 +102,10 @@ def test_guardrail_evaluate_escalates_on_unverified_link_when_enabled():
 
 def test_guardrail_evaluate_passes_verified_link_when_enabled():
     guardrail = OutputGuardrail(verify_links=True)
-    with patch("urllib.request.urlopen", return_value=_fake_response(
-        status=200, geturl="https://support.apple.com/kb/HT201264"
-    )):
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_fake_response(status=200, geturl="https://support.apple.com/kb/HT201264"),
+    ):
         passed, violations = guardrail.evaluate(
             "Check out some battery maximizing tips here: support.apple.com/kb/HT201264"
         )

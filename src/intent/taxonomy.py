@@ -1,6 +1,5 @@
 """Intent taxonomy, definitions, and canonical prototype examples for @AppleSupport."""
 
-
 from src.models import AppleIntentEnum
 
 INTENT_DESCRIPTIONS: dict[AppleIntentEnum, str] = {

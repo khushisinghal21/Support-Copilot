@@ -20,9 +20,7 @@ def triage_engine():
 
 def test_triage_battery_hazard_escalation(triage_engine):
     tweet = TweetInput(
-        tweet_id="t1",
-        text="Help! My iPhone battery is swollen and bulging the screen out!!",
-        author_id="user_1"
+        tweet_id="t1", text="Help! My iPhone battery is swollen and bulging the screen out!!", author_id="user_1"
     )
     intent = IntentResult(primary_intent=AppleIntentEnum.HARDWARE_AND_BATTERY, confidence=0.95)
     decision = triage_engine.evaluate(tweet, intent)
@@ -35,9 +33,7 @@ def test_triage_battery_hazard_escalation(triage_engine):
 
 def test_triage_pii_email_escalation(triage_engine):
     tweet = TweetInput(
-        tweet_id="t2",
-        text="My Apple ID is locked, please email me at john.doe@example.com",
-        author_id="user_2"
+        tweet_id="t2", text="My Apple ID is locked, please email me at john.doe@example.com", author_id="user_2"
     )
     intent = IntentResult(primary_intent=AppleIntentEnum.ACCOUNT_BILLING_ICLOUD, confidence=0.92)
     decision = triage_engine.evaluate(tweet, intent)
@@ -51,7 +47,7 @@ def test_triage_human_request_escalation(triage_engine):
     tweet = TweetInput(
         tweet_id="t3",
         text="Stop with this automated response! I want to speak with a human agent now.",
-        author_id="user_3"
+        author_id="user_3",
     )
     intent = IntentResult(primary_intent=AppleIntentEnum.OUT_OF_SCOPE_AMBIGUOUS, confidence=0.50)
     decision = triage_engine.evaluate(tweet, intent)
@@ -64,7 +60,7 @@ def test_triage_high_frustration_lawsuit_threat(triage_engine):
     tweet = TweetInput(
         tweet_id="t4",
         text="Apple stole my money and this is a scam!! Getting my lawyer involved right now!!",
-        author_id="user_4"
+        author_id="user_4",
     )
     intent = IntentResult(primary_intent=AppleIntentEnum.ACCOUNT_BILLING_ICLOUD, confidence=0.85)
     decision = triage_engine.evaluate(tweet, intent)
@@ -74,11 +70,7 @@ def test_triage_high_frustration_lawsuit_threat(triage_engine):
 
 
 def test_triage_low_confidence_escalation(triage_engine):
-    tweet = TweetInput(
-        tweet_id="t5",
-        text="I don't know what is wrong with this thing",
-        author_id="user_5"
-    )
+    tweet = TweetInput(tweet_id="t5", text="I don't know what is wrong with this thing", author_id="user_5")
     intent = IntentResult(primary_intent=AppleIntentEnum.OUT_OF_SCOPE_AMBIGUOUS, confidence=0.45)
     decision = triage_engine.evaluate(tweet, intent)
 
@@ -92,11 +84,7 @@ def test_triage_low_retrieval_similarity_escalation(triage_engine):
     silently stopped testing the behavior it claims to test the moment
     MIN_RETRIEVAL_SIMILARITY was recalibrated away from its old (miscalibrated,
     see docs/AUDIT_AND_FIX_PLAN.md Section 7.10) default of 0.40."""
-    tweet = TweetInput(
-        tweet_id="t6",
-        text="Can I cook an egg on my iPhone?",
-        author_id="user_6"
-    )
+    tweet = TweetInput(tweet_id="t6", text="Can I cook an egg on my iPhone?", author_id="user_6")
     intent = IntentResult(primary_intent=AppleIntentEnum.HOW_TO_CONFIGURATION, confidence=0.75)
     below_threshold = triage_engine.min_retrieval_similarity / 2
     low_rag = RetrievalResult(snippets=["Random"], similarity_scores=[below_threshold], max_similarity=below_threshold)
@@ -108,15 +96,13 @@ def test_triage_low_retrieval_similarity_escalation(triage_engine):
 
 def test_triage_safe_auto_handle_clearance(triage_engine):
     tweet = TweetInput(
-        tweet_id="t7",
-        text="How do I transfer my photos from iPhone to my Windows PC?",
-        author_id="user_7"
+        tweet_id="t7", text="How do I transfer my photos from iPhone to my Windows PC?", author_id="user_7"
     )
     intent = IntentResult(primary_intent=AppleIntentEnum.HOW_TO_CONFIGURATION, confidence=0.92)
     good_rag = RetrievalResult(
         snippets=["Connect your iPhone to your PC with a USB cable: apple.co/importphotos"],
         similarity_scores=[0.88],
-        max_similarity=0.88
+        max_similarity=0.88,
     )
     decision = triage_engine.evaluate(tweet, intent, rag_res=good_rag, guardrail_passed=True)
 

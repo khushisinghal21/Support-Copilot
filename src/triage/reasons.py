@@ -1,6 +1,5 @@
 """Standardized escalation reason codes and explainable justification strings."""
 
-
 from src.models import EscalationReasonCode
 
 REASON_EXPLANATIONS: dict[EscalationReasonCode, str] = {

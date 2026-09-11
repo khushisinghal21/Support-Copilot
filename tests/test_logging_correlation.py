@@ -48,9 +48,7 @@ def test_pipeline_binds_and_clears_the_correlation_id(caplog):
     """The id must appear on lines logged during processing, and must NOT leak
     afterwards -- in a thread pool a leaked id mislabels the next request."""
     classifier = MagicMock()
-    classifier.predict.return_value = IntentResult(
-        primary_intent=AppleIntentEnum.HARDWARE_AND_BATTERY, confidence=0.92
-    )
+    classifier.predict.return_value = IntentResult(primary_intent=AppleIntentEnum.HARDWARE_AND_BATTERY, confidence=0.92)
     generator = MagicMock()
     generator.generate.return_value = ("A grounded reply about battery health today.", True, [])
     pipeline = SupportPipeline(

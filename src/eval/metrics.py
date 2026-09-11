@@ -26,7 +26,8 @@ def compute_intent_metrics(y_true: list[str], y_pred: list[str]) -> dict[str, An
                 "f1": round(report[cls]["f1-score"], 4),
                 "support": report[cls]["support"],
             }
-            for cls in labels if cls in report
+            for cls in labels
+            if cls in report
         },
         "confusion_matrix": cm,
         "labels": labels,
@@ -44,8 +45,12 @@ def compute_triage_metrics(y_true: list[str], y_pred: list[str]) -> dict[str, An
     esc_f1 = report.get("ESCALATE", {}).get("f1-score", 0.0)
 
     # Calculate safety-critical missed escalations: True=ESCALATE, Pred=AUTO_HANDLE
-    missed_escalations = sum(1 for yt, yp in zip(y_true, y_pred, strict=False) if yt == "ESCALATE" and yp == "AUTO_HANDLE")
-    false_escalations = sum(1 for yt, yp in zip(y_true, y_pred, strict=False) if yt == "AUTO_HANDLE" and yp == "ESCALATE")
+    missed_escalations = sum(
+        1 for yt, yp in zip(y_true, y_pred, strict=False) if yt == "ESCALATE" and yp == "AUTO_HANDLE"
+    )
+    false_escalations = sum(
+        1 for yt, yp in zip(y_true, y_pred, strict=False) if yt == "AUTO_HANDLE" and yp == "ESCALATE"
+    )
     total_escalations_true = sum(1 for yt in y_true if yt == "ESCALATE")
 
     missed_rate = (missed_escalations / total_escalations_true) if total_escalations_true > 0 else 0.0

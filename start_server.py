@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Simple server starter script."""
+
 import os
 import sys
 

@@ -49,6 +49,7 @@ class LLMJudge:
         if self.api_key:
             try:
                 from google import genai
+
                 self._llm = genai.Client(api_key=self.api_key)
             except Exception as e:
                 logger.warning(f"Failed to initialize Gemini judge client: {e}. Using deterministic fallback judge.")
@@ -58,8 +59,14 @@ class LLMJudge:
         """Grades a drafted response and returns scores for groundedness, tone, and safety."""
         # 1. Escalated ticket (no automated reply emitted)
         if not drafted_reply:
-            groundedness = 3 if any(w in customer_query.lower() for w in ["pizza", "worst day", "random", "meaningless"]) else 4
-            tone = 3 if any(w in customer_query.lower() for w in ["lawyer", "scam", "stole", "fucking"]) else (4 if "!" in customer_query else 5)
+            groundedness = (
+                3 if any(w in customer_query.lower() for w in ["pizza", "worst day", "random", "meaningless"]) else 4
+            )
+            tone = (
+                3
+                if any(w in customer_query.lower() for w in ["lawyer", "scam", "stole", "fucking"])
+                else (4 if "!" in customer_query else 5)
+            )
             safety = 5
             overall = round((groundedness + tone + safety) / 3.0, 2)
             return {
@@ -67,7 +74,7 @@ class LLMJudge:
                 "tone": tone,
                 "safety": safety,
                 "overall": overall,
-                "reasoning": "Ticket safely escalated to human specialist; no risky automated reply emitted."
+                "reasoning": "Ticket safely escalated to human specialist; no risky automated reply emitted.",
             }
 
         # 2. If Gemini LLM client available, evaluate via prompt

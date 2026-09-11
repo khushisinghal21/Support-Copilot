@@ -56,12 +56,14 @@ def load_real_corpus(max_records: int = RAG_CORPUS_MAX_RECORDS) -> list[dict[str
             d = json.loads(line)
             if str(d.get("tweet_id")) in excluded:
                 continue
-            records.append({
-                "tweet_id": d["tweet_id"],
-                "customer_text": d["customer_text"],
-                "agent_reply": d["agent_reply"],
-                "intent": heuristic_intent(d["customer_text"]),
-            })
+            records.append(
+                {
+                    "tweet_id": d["tweet_id"],
+                    "customer_text": d["customer_text"],
+                    "agent_reply": d["agent_reply"],
+                    "intent": heuristic_intent(d["customer_text"]),
+                }
+            )
             if len(records) >= max_records:
                 break
     return records
@@ -93,8 +95,7 @@ class HistoricalVectorStore:
         self.client = chromadb.PersistentClient(path=self.persist_dir)
         self.encoder = get_encoder(EMBEDDING_MODEL_NAME)
         self.collection = self.client.get_or_create_collection(
-            name=self.collection_name,
-            metadata={"hnsw:space": "cosine"}
+            name=self.collection_name, metadata={"hnsw:space": "cosine"}
         )
         self._ensure_seed_data()
 
@@ -107,14 +108,18 @@ class HistoricalVectorStore:
             return
         real_records = load_real_corpus()
         if real_records:
-            logger.info(f"Initializing vector store with {len(real_records)} real "
-                        f"@AppleSupport pairs (golden-set examples excluded)...")
+            logger.info(
+                f"Initializing vector store with {len(real_records)} real "
+                f"@AppleSupport pairs (golden-set examples excluded)..."
+            )
             self.index_records(real_records)
         else:
-            logger.warning("No real Kaggle pairs found at KAGGLE_PAIRS_PATH -- "
-                            "falling back to the small hand-written seed corpus. "
-                            "Run `python -m src.data.ingest_kaggle extract` first "
-                            "for real grounding.")
+            logger.warning(
+                "No real Kaggle pairs found at KAGGLE_PAIRS_PATH -- "
+                "falling back to the small hand-written seed corpus. "
+                "Run `python -m src.data.ingest_kaggle extract` first "
+                "for real grounding."
+            )
             self.index_records(HISTORICAL_APPLE_RESOLUTIONS)
 
     def index_records(self, records: list[dict[str, str]]):
@@ -130,10 +135,12 @@ class HistoricalVectorStore:
         for record, vec in zip(records, encoded_vecs, strict=False):
             ids.append(record["tweet_id"])
             documents.append(record["customer_text"])
-            metadatas.append({
-                "agent_reply": record["agent_reply"],
-                "intent": record.get("intent", "OS_SOFTWARE_TROUBLESHOOTING"),
-            })
+            metadatas.append(
+                {
+                    "agent_reply": record["agent_reply"],
+                    "intent": record.get("intent", "OS_SOFTWARE_TROUBLESHOOTING"),
+                }
+            )
             embeddings.append(vec.tolist())
 
         self.collection.upsert(
@@ -153,6 +160,6 @@ class HistoricalVectorStore:
             query_embeddings=[query_vec],
             n_results=top_k,
             where=where_filter,
-            include=["documents", "metadatas", "distances"]
+            include=["documents", "metadatas", "distances"],
         )
         return results

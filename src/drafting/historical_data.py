@@ -1,6 +1,5 @@
 """Comprehensive seed historical resolutions representing authentic @AppleSupport response patterns."""
 
-
 HISTORICAL_APPLE_RESOLUTIONS: list[dict[str, str]] = [
     # OS & Software Troubleshooting
     {
@@ -87,7 +86,6 @@ HISTORICAL_APPLE_RESOLUTIONS: list[dict[str, str]] = [
         "agent_reply": "We can help troubleshoot unexpected restarts. Inspect the headphone adapter and update your iOS version: apple.co/forcerestart",
         "intent": "OS_SOFTWARE_TROUBLESHOOTING",
     },
-
     # Hardware & Battery Issues
     {
         "tweet_id": "hist_hw_001",
@@ -131,7 +129,6 @@ HISTORICAL_APPLE_RESOLUTIONS: list[dict[str, str]] = [
         "agent_reply": "We can help arrange a display inspection at an Apple Authorized Service Provider: apple.co/screenrepair",
         "intent": "HARDWARE_AND_BATTERY",
     },
-
     # Account, Billing & iCloud
     {
         "tweet_id": "hist_acc_001",
@@ -163,7 +160,6 @@ HISTORICAL_APPLE_RESOLUTIONS: list[dict[str, str]] = [
         "agent_reply": "Canceling subscriptions is simple. Go to Settings > [Your Name] > Subscriptions and tap Cancel: apple.co/cancelsubscription",
         "intent": "ACCOUNT_BILLING_ICLOUD",
     },
-
     # How-To & Configuration
     {
         "tweet_id": "hist_howto_001",
@@ -201,7 +197,6 @@ HISTORICAL_APPLE_RESOLUTIONS: list[dict[str, str]] = [
         "agent_reply": "Yes! You can share audio with two pairs of AirPods using Audio Sharing in Control Center: apple.co/audiopairing",
         "intent": "HOW_TO_CONFIGURATION",
     },
-
     # Out of Scope / Ambiguous
     {
         "tweet_id": "hist_amb_001",

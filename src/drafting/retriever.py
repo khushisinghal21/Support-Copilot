@@ -1,6 +1,5 @@
 """Semantic retriever for grounding replies on historical resolutions."""
 
-
 from src.drafting.vector_store import HistoricalVectorStore
 from src.models import HistoricalCitation, RetrievalResult
 

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class AppleIntentEnum(str, Enum):
     """Canonical data-derived intents for @AppleSupport."""
+
     OS_SOFTWARE_TROUBLESHOOTING = "OS_SOFTWARE_TROUBLESHOOTING"
     HARDWARE_AND_BATTERY = "HARDWARE_AND_BATTERY"
     ACCOUNT_BILLING_ICLOUD = "ACCOUNT_BILLING_ICLOUD"
@@ -19,6 +20,7 @@ class AppleIntentEnum(str, Enum):
 
 class TriageAction(str, Enum):
     """Routing actions for incoming support inquiries."""
+
     AUTO_HANDLE = "AUTO_HANDLE"
     ESCALATE = "ESCALATE"
     CLARIFY = "CLARIFY"  # ask a follow-up question instead of forcing a binary
@@ -32,6 +34,7 @@ class TriageAction(str, Enum):
 
 class EscalationReasonCode(str, Enum):
     """Standardized escalation/clarification codes explaining a triage decision."""
+
     HARDWARE_PHYSICAL_DAMAGE = "HARDWARE_PHYSICAL_DAMAGE"
     PII_SECURITY_SENSITIVE = "PII_SECURITY_SENSITIVE"
     HIGH_FRUSTRATION_CHURN_RISK = "HIGH_FRUSTRATION_CHURN_RISK"
@@ -49,6 +52,7 @@ class EscalationReasonCode(str, Enum):
 
 class TweetInput(BaseModel):
     """Input payload representing an incoming customer tweet."""
+
     tweet_id: str = Field(..., description="Unique tweet snowflake ID")
     text: str = Field(..., min_length=1, description="Raw tweet text")
     author_id: str = Field(..., description="Anonymized or raw author identifier")
@@ -65,14 +69,18 @@ class TweetInput(BaseModel):
 
 class IntentResult(BaseModel):
     """Result of intent classification."""
+
     primary_intent: AppleIntentEnum = Field(..., description="Dominant classified intent")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Calibrated confidence score [0.0, 1.0]")
     secondary_intents: list[AppleIntentEnum] = Field(default_factory=list, description="Runner-up intents if ambiguous")
-    score_distribution: dict[str, float] = Field(default_factory=dict, description="Softmax/cosine distribution across classes")
+    score_distribution: dict[str, float] = Field(
+        default_factory=dict, description="Softmax/cosine distribution across classes"
+    )
 
 
 class HistoricalCitation(BaseModel):
     """Reference to a historical resolution pair used for grounding."""
+
     tweet_id: str
     customer_text: str
     agent_reply: str
@@ -81,6 +89,7 @@ class HistoricalCitation(BaseModel):
 
 class RetrievalResult(BaseModel):
     """Result of semantic retrieval from historical brand resolutions."""
+
     snippets: list[str] = Field(default_factory=list)
     citations: list[HistoricalCitation] = Field(default_factory=list)
     similarity_scores: list[float] = Field(default_factory=list)
@@ -89,6 +98,7 @@ class RetrievalResult(BaseModel):
 
 class TriageDecision(BaseModel):
     """Decision whether to auto-handle or escalate with a stated reason."""
+
     action: TriageAction = Field(..., description="AUTO_HANDLE or ESCALATE")
     stated_reason: str = Field(..., min_length=3, description="Explainable reason for decision")
     reason_code: EscalationReasonCode | None = Field(None, description="Structured enum reason code if escalated")
@@ -98,6 +108,7 @@ class TriageDecision(BaseModel):
 
 class SupportResponse(BaseModel):
     """Comprehensive end-to-end response produced by the AI Support Pipeline."""
+
     tweet_id: str
     intent: IntentResult
     triage: TriageDecision

@@ -53,6 +53,7 @@ class GroundedReplyGenerator:
         if self.provider == "gemini" and self.api_key:
             try:
                 from google import genai
+
                 self._llm = genai.Client(api_key=self.api_key)
                 logger.info(f"Initialized Gemini client (google-genai SDK) for model: {self.model_name}")
             except Exception as e:
@@ -67,7 +68,9 @@ class GroundedReplyGenerator:
     ) -> tuple[str | None, bool, list]:
         """Generates a grounded reply and returns (reply_text, passed_guardrails, violations)."""
         retrieved_snippets = retrieval_result.snippets if retrieval_result else []
-        context_str = "\n".join([f"- {s}" for s in retrieved_snippets]) if retrieved_snippets else "No specific history."
+        context_str = (
+            "\n".join([f"- {s}" for s in retrieved_snippets]) if retrieved_snippets else "No specific history."
+        )
 
         generated_text = None
 
@@ -148,7 +151,9 @@ class GroundedReplyGenerator:
             if retrieved_snippets:
                 generated_text = retrieved_snippets[0]
             else:
-                generated_text = "We'd like to help. Have you tried restarting your device? Let us know which iOS version you have."
+                generated_text = (
+                    "We'd like to help. Have you tried restarting your device? Let us know which iOS version you have."
+                )
 
         # Evaluate against guardrails -- pass the source customer text (for
         # the PII-echo check) and retrieved snippets (for the grounding check).

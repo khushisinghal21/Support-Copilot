@@ -103,7 +103,8 @@ def verify_url(url: str, timeout: float = 3.0) -> LinkCheckResult:
             # This is exactly the apple.co/directmessage pattern: a 2xx/3xx
             # status that LOOKS fine, but the specific resource never existed.
             return LinkCheckResult(
-                url, "suspicious_redirect",
+                url,
+                "suspicious_redirect",
                 f"redirected to the domain root ({final_url}) instead of the requested page",
             )
 
