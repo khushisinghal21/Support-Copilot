@@ -38,6 +38,16 @@ Safety Triage Gate  ─────────► hazard / PII / fraud / human-
            └── PASS ──────────► AUTO_HANDLE (reply goes out)
 ```
 
+The safety gate genuinely sits where the diagram puts it: gates 1-5 (prompt
+injection, hardware hazard, PII, human request, frustration/fraud) run on the raw
+tweet in `TriageEngine.evaluate_input()` *before* any retrieval or LLM call, and
+gates 6-9 run after drafting in `evaluate_output()`. Until the hardening pass the
+code ran generate-then-triage and contradicted this picture -- which meant the
+prompt-injection gate could not protect the model it was guarding, and 15.4% of
+tickets paid for a reply that was then thrown away. `tests/test_pipeline_gate_order.py`
+asserts the generator is never invoked for an input-gated tweet, so the diagram
+cannot drift from the code again.
+
 Two examples end to end:
 
 **"My iPhone battery drains really fast since the last update. How can I check which apps are using the most battery?"**
