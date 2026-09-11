@@ -293,3 +293,16 @@ class TriageDecision(BaseModel):
 | **TC-TRIAGE-02** | PII Detection | `pytest tests/test_triage.py::test_pii_email_escalates` | Text containing `"user@gmail.com"` triggers `PII_SECURITY_SENSITIVE` and `action=ESCALATE`. |
 | **TC-TRIAGE-03** | Low Confidence Escalation | `pytest tests/test_triage.py::test_low_confidence_escalates` | Low confidence input ($< 0.65$) escalates with `LOW_CONFIDENCE_AMBIGUOUS`. |
 | **TC-TRIAGE-04** | Fail-Closed Exception | `pytest tests/test_triage.py::test_fail_closed_on_error` | System errors result in `action=ESCALATE` and `reason_code=SYSTEM_EXCEPTION_FAIL_CLOSED`. |
+
+---
+
+## Implementation Status vs This Specification
+
+> **This spec is the original intent, retained unedited.** The shipped thresholds differ, and the difference is deliberate and measured rather than accidental.
+
+| This spec requires | What ships | Why / evidence |
+| :--- | :--- | :--- |
+| `intent_confidence < 0.65` forces ESCALATE (FR-TRIAGE-04) | `MIN_INTENT_CONFIDENCE = 0.40` (`src/config.py`) | Threshold sweep, `docs/AUDIT_AND_FIX_PLAN.md` §7.10. 0.65 escalates the large majority of *correct* predictions. |
+| `grounding_similarity < 0.65` forces ESCALATE (FR-TRIAGE-04) | `MIN_RETRIEVAL_SIMILARITY = 0.20` (`src/config.py`) | Lowered, not raised, on evidence. At 0.40 this gate was force-escalating ~61% of legitimate AUTO_HANDLE rows; the sweep showed retrieval similarity barely discriminates escalate-worthy from routine queries at all (Youden's J stays near zero across the range), so it was demoted to a last-resort "nothing relevant found" backstop. The four dedicated gates ahead of it do the real safety work. |
+| Sentiment polarity $\le -0.60$ triggers `HIGH_FRUSTRATION_CHURN_RISK` (FR-TRIAGE-05) | `FRUSTRATION_THRESHOLD = 0.60` on a positive-scaled frustration score | Same threshold, opposite sign convention: `src/triage/sentiment.py` scores frustration upward from 0.0 rather than polarity downward from 0.0. Equivalent in effect; the spec's sign is the one that is stale. |
+| Gate ordering (§ cascade) | Unchanged, but now split across two call sites | Gates 1-5 run on the raw tweet *before* retrieval and generation (`TriageEngine.evaluate_input`), gates 6-9 after drafting (`evaluate_output`). Order and reason codes are identical; see `src/triage/engine.py`. Before this change the pipeline ran generation before triage, so gate 1 could not protect the model it was guarding. |

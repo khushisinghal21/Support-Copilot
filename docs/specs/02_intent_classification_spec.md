@@ -248,3 +248,17 @@ class IntentResult(BaseModel):
 | **TC-INT-02** | Baseline Lift Verification | `python -m src.intent.evaluate_baselines` | Production Macro-F1 $\ge 0.78$; Baseline 1 Macro-F1 $\le 0.35$; Baseline 2 Macro-F1 $\le 0.65$. |
 | **TC-INT-03** | Low Confidence Fallback | `pytest tests/test_intent.py::test_ambiguous_text_fallback` | Nonsense text *"blabla xyz 1234"* yields `OUT_OF_SCOPE_AMBIGUOUS` with confidence $< 0.60$. |
 | **TC-INT-04** | Latency Benchmark | `pytest tests/test_intent.py::test_inference_latency` | Batch of 100 queries processes in $< 3.5$s ($< 35$ms/query). |
+
+---
+
+## Implementation Status vs This Specification
+
+> **This spec is the original intent, retained unedited. The shipped system differs from it in the ways listed below.** These rows are not presented as satisfied requirements. They are kept visible rather than reconciled by rewriting the spec, because a spec quietly edited to match whatever was built stops being evidence of anything.
+
+| This spec requires | What ships | Why / evidence |
+| :--- | :--- | :--- |
+| $\tau_{intent} < 0.60$ for the `OUT_OF_SCOPE_AMBIGUOUS` fallback (§3.1, §3.2, §4, TC-INT-03) | `MIN_INTENT_CONFIDENCE = 0.40` (`src/config.py`) | A real threshold sweep replaced the guessed value. At 0.60 the gate escalates far more correct predictions than it catches wrong ones; 0.40 catches 26.4% of genuine misclassifications for an 8.6% false-escalation cost. Sweep output and reasoning: `docs/AUDIT_AND_FIX_PLAN.md` §7.10. Since the hardening pass the sweep reads only the `calibration` split (`src/eval/splits.py`). |
+| Production Macro-F1 **> 0.78** (NFR-INT-02, TC-INT-02) | **0.60** on held-out rows | Not met. The target was set before any measurement existed. Baselines land where the spec predicted (trivial ~0.09, TF-IDF ~0.35), so the gap is the production model's, not a broken comparison. Reported rather than quietly dropped; see `docs/REPORT.md` §2. |
+| Classification latency **< 35 ms** per tweet (NFR-INT-01, TC-INT-04) | P95 **~61 ms** end-to-end | Not met as stated, and not directly comparable: the measured figure is whole-pipeline P95 (classification + retrieval + guardrails), which the spec never defined a budget for. No isolated per-classification benchmark exists. Treat this row as unverified rather than passed. |
+| Determinism "under deterministic temperature settings ($T=0$)" (NFR-INT-03) | Softmax temperature **0.08** | Determinism holds -- the classifier is deterministic for a fixed input and model -- but via a fixed nonzero temperature, not $T=0$. $T=0$ would collapse the softmax to an argmax and destroy the calibrated confidence score the triage gate thresholds against, which is the whole point of §3.1. The spec's own two requirements are in tension; calibration won. |
+| `python -m src.intent.evaluate_baselines` (TC-INT-02) | `python -m src.eval.runner`; baselines live in `src/intent/baselines.py` | That module never existed under that name. The command in this spec does not run. |

@@ -11,6 +11,14 @@
 
 ---
 
+> **Read this first.** These specs are the ORIGINAL design intent, written before
+> implementation, and they are deliberately not edited to match what was built.
+> Where the shipped system differs -- different thresholds, an accuracy target
+> that was missed, a latency budget that was never isolated -- specs 02 and 04
+> carry an "Implementation Status vs This Specification" table at the bottom
+> listing each difference with its evidence. A "Status: Approved" row below means
+> the spec was approved, not that every requirement in it is met.
+
 ## 2. Specification Index & Status
 
 | Spec ID | Module Name | Primary Responsibility | Assignment Deliverable Mapping | Status |

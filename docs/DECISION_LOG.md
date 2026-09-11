@@ -8,7 +8,7 @@
 
 3. **A 9-gate deterministic cascade instead of one LLM safety score.** Prompt injection, hazards, PII, human requests, sentiment, confidence, clarify, similarity, and generation guardrails each run as an explicit, ordered rule -- not a single model call an LLM could hallucinate its way past on a real physical hazard.
 
-4. **Calibrated intent confidence with temperature scaling (T=0.12).** Raw cosine similarity isn't a real probability. Scaling it produces a bounded, calibrated confidence score the triage gate can actually threshold against, instead of an arbitrary similarity number with no defined meaning.
+4. **Calibrated intent confidence with temperature scaling (T=0.08).** Raw cosine similarity isn't a real probability. Scaling it produces a bounded, calibrated confidence score the triage gate can actually threshold against, instead of an arbitrary similarity number with no defined meaning.
 
 5. **Never let the agent request PII -- and block it from echoing PII the customer already posted.** Most designs only guard the agent's own questions. This one also scans the customer's tweet for PII-shaped text (like a phone number) and blocks a reply that echoes it back -- closing a leak most systems miss entirely.
 

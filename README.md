@@ -62,7 +62,7 @@ cp .env.example .env    # optional: add a real GEMINI_API_KEY here
 | Command | What it does |
 | :--- | :--- |
 | `python -m src.eval.runner` | Runs the full benchmark (188 examples, 2 baselines, LLM judge, human-agreement check) in under 15 minutes -- usually well under 1. |
-| `pytest tests/ -v` | Runs the test suite (82 test functions). |
+| `pytest tests/ -v` | Runs the test suite (129 test functions). |
 | `./run.sh` | Starts the dashboard + API at `http://localhost:8000`. |
 | `python -m src.cli --query "..."` | Processes one query from the terminal. |
 
@@ -88,15 +88,19 @@ Datasets/models/libraries borrowed and cited: [`docs/REPORT.md`](docs/REPORT.md)
 
 Regenerate anytime with `python -m src.eval.runner` -- these come straight from `docs/benchmark_summary.json`, not hand-typed.
 
+**Measured on the 124 held-out rows only.** The two triage thresholds were tuned against the other 64 (`calibration`) rows, so reporting on those would flatter the system. See `docs/REPORT.md` Section 5, item 5.
+
 | Metric | Trivial baseline | Simple (TF-IDF) baseline | Production |
 | :--- | :---: | :---: | :---: |
-| Intent accuracy | 29.3% | 52.1% | **62.2%** |
-| Triage accuracy | 82.5% | 75.0% | **60.1%** ⚠️ |
-| Escalation recall | 0.0% | 25.0% | **93.8%** |
-| Missed escalations (of 32) | 32 | 24 | **2** |
+| Intent accuracy | 29.8% | 40.3% | **63.7%** |
+| Triage accuracy | 83.1% | 75.8% | **62.9%** ⚠️ |
+| Escalation recall | 0.0% | 33.3% | **90.5%** |
+| Missed escalations (of 21) | 21 | 14 | **2** |
 | Human-judge kappa | -- | -- | **0.07** ("Slight agreement") |
 
-Triage *accuracy* looks worse for the production system than either baseline -- that's expected, not a bug: the trivial baseline "wins" on accuracy only because it never escalates anything, which also means it misses 100% of real safety hazards. Escalation *recall* (93.8% vs 0%) is the number that actually matters for a safety system. Full breakdown, including why the human-judge kappa is weak and what that implies, is in `docs/REPORT.md` Section 5.
+Triage *accuracy* looks worse for the production system than either baseline -- that's expected, not a bug: the trivial baseline "wins" on accuracy only because it never escalates anything, which also means it misses 100% of real safety hazards. Escalation *recall* (90.5% vs 0%) is the number that actually matters for a safety system.
+
+Earlier versions of this table showed 62.2% / 60.1% / 93.8% measured across all 188 rows, with thresholds tuned on those same rows. Moving to held-out reporting cost 3.3 points of escalation recall and 2.0 points of triage accuracy. Those are the honest numbers. Full breakdown, including why the human-judge kappa is weak and what that implies, is in `docs/REPORT.md` Section 5.
 
 ---
 
