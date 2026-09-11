@@ -1,0 +1,68 @@
+=== AFTER 1.1 + 1.2: pytest ===
+........................................................................ [ 64%]
+.......................................                                  [100%]
+111 passed in 11.55s
+
+=== AFTER 1.1 + 1.2: eval (headline = HELD-OUT rows only) ===
+╭─────────────────────────── Benchmark Suite ───────────────────────────╮
+│ Hiver SDE Intern Benchmark Evaluation Runner                          │
+│ Target Brand: @AppleSupport                                           │
+│ Headline Set: 124 of 124 HELD-OUT rows                                │
+│ Calibration Set (thresholds tuned here, reported separately): 64 rows │
+│ Golden set total: 188                                                 │
+│ Requirement: Reproducible in < 15 minutes                             │
+╰───────────────────────────────────────────────────────────────────────╯
+Evaluating Baseline 1 (Trivial Majority)...
+Evaluating Baseline 2 (Simple TF-IDF)...
+Evaluating Proposed Production Pipeline (Semantic RAG + Triage Gate)...
+Evaluating the same pipeline on the calibration split (for the generalisation 
+gap)...
+Evaluating LLM-as-a-Judge Rubric & Human Agreement...
+                  Hiver SDE Intern: Headline Benchmark Results                  
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┓
+┃                                  ┃ Baseline ┃ Baseline ┃ Proposed ┃          ┃
+┃                                  ┃    1     ┃    2     ┃  System  ┃ Lift vs  ┃
+┃ Evaluation Metric                ┃ (Trivia… ┃ (Simple) ┃ (Produc… ┃  Simple  ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━┩
+│ Intent Macro-F1                  │  0.0919  │  0.3523  │  0.6029  │ +0.2506  │
+│ Intent Accuracy                  │  29.8%   │  40.3%   │  63.7%   │  +23.4%  │
+│ Triage Accuracy                  │  83.1%   │  75.8%   │  62.9%   │  -12.9%  │
+│ Escalation Recall                │   0.0%   │  33.3%   │  90.5%   │  +57.2%  │
+│ Missed Escalations (Safety Risk) │ 21 / 21  │ 14 / 21  │  2 / 21  │   +12    │
+│ ROUGE-L Grounding Score          │  0.1572  │  0.1465  │  0.4514  │ +0.3049  │
+│ LLM Judge Quality (1-5)          │  4.3 /   │  4.0 /   │  4.1 /   │   +0.1   │
+│                                  │   5.0    │   5.0    │   5.0    │          │
+└──────────────────────────────────┴──────────┴──────────┴──────────┴──────────┘
+  Generalisation gap: calibration split (thresholds tuned here) vs   
+                      held-out (reported above)                      
+┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Metric            ┃ Calibration (n=64) ┃ Held-out (n=124) ┃  Gap  ┃
+┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ Intent Accuracy   │       57.8%        │      63.7%       │ +5.9% │
+│ Triage Accuracy   │       68.8%        │      62.9%       │ -5.8% │
+│ Escalation Recall │       100.0%       │      90.5%       │ -9.5% │
+└───────────────────┴────────────────────┴──────────────────┴───────┘
+A held-out number below its calibration counterpart is the expected direction: 
+thresholds were chosen against the calibration rows. Quote the held-out column.
+Production Intent Confusion Matrix (rows=true,
+               cols=predicted)                
+┏━━━━━━━━━━━━━┳━━━━━┳━━━━━┳━━━━━┳━━━━━┳━━━━━━┓
+┃ True \ Pred ┃ ABI ┃ HAB ┃ HTC ┃ OST ┃ OOSA ┃
+┡━━━━━━━━━━━━━╇━━━━━╇━━━━━╇━━━━━╇━━━━━╇━━━━━━┩
+│ ABI         │ 19  │  -  │  -  │  1  │  4   │
+│ HAB         │  1  │ 22  │  -  │  6  │  5   │
+│ HTC         │  1  │  2  │  5  │  1  │  2   │
+│ OST         │  1  │  4  │  -  │ 26  │  6   │
+│ OOSA        │  5  │  2  │  3  │  1  │  7   │
+└─────────────┴─────┴─────┴─────┴─────┴──────┘
+ABI=ACCOUNT_BILLING_ICLOUD  HAB=HARDWARE_AND_BATTERY  HTC=HOW_TO_CONFIGURATION  
+OST=OS_SOFTWARE_TROUBLESHOOTING  OOSA=OUT_OF_SCOPE_AMBIGUOUS
+╭─────────────── Verification & Deliverables Summary ────────────────╮
+│ Human-Judge Cohen's Kappa: kappa = 0.0716 (Slight agreement)       │
+│ Exact Agreement (Safety): 42.0%                                    │
+│ Report Generated: /root/sc/docs/REPORT.md                          │
+│ Dashboard Summary JSON: /root/sc/docs/benchmark_summary.json       │
+│ Production P95 Latency (measured): 58.96 ms                        │
+│ Benchmark Execution Time: 15.93 seconds (Target: < 900s / 15 mins) │
+│                                                                    │
+╰────────────────────────────────────────────────────────────────────╯

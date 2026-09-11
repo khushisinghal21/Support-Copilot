@@ -11,7 +11,8 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
 from src.models import TweetInput
-from src.config import GOLDEN_SET_PATH, REPORT_OUTPUT_PATH, BENCHMARK_SUMMARY_JSON_PATH, TARGET_BRAND
+from src.config import REPORT_OUTPUT_PATH, BENCHMARK_SUMMARY_JSON_PATH, TARGET_BRAND
+from src.eval.splits import CALIBRATION, HELDOUT, load_golden_rows, split_counts
 from src.pipeline import SupportPipeline
 from src.intent.baselines import TrivialMajorityClassifier, SimpleTfidfClassifier
 from src.eval.metrics import compute_intent_metrics, compute_triage_metrics, compute_rouge_similarity
@@ -24,15 +25,19 @@ app = typer.Typer(help="Hiver AI Support Agent Evaluation Harness")
 console = Console()
 
 
-def load_golden_dataset(limit: int = None) -> List[Dict]:
+def load_golden_dataset(limit: int = None, split: str = None) -> List[Dict]:
     """Loads the hand-labelled golden dataset from JSONL. `limit` truncates
     to a subset (used by --quick); the full file is used otherwise --
     previously this hardcoded 200 regardless of how many rows the golden
     set actually contained, silently dropping rows if the file grew past
-    200 or padding metrics with nothing if it shrank below 200."""
-    with open(GOLDEN_SET_PATH, "r", encoding="utf-8") as f:
-        records = [json.loads(line) for line in f if line.strip()]
-    return records[:limit] if limit else records
+    200 or padding metrics with nothing if it shrank below 200.
+
+    `split` restricts to "calibration" or "heldout" (src/eval/splits.py).
+    Headline numbers are reported on the held-out rows only, because the
+    thresholds in src/config.py were tuned against the calibration rows --
+    scoring on the data a threshold was chosen from is the bias this split
+    exists to remove."""
+    return load_golden_rows(split=split, limit=limit)
 
 
 @app.command()
@@ -41,20 +46,25 @@ def run(
 ):
     """Executes the complete benchmark evaluation comparing Proposed System against 2 Baselines."""
     start_total = time.perf_counter()
-    full_dataset = load_golden_dataset()
-    total_n = len(full_dataset)
-    limit = 50 if quick else total_n
+    counts = split_counts()
+    heldout_rows = load_golden_dataset(split=HELDOUT)
+    calibration_rows = load_golden_dataset(split=CALIBRATION)
+    total_n = counts.get(HELDOUT, 0) + counts.get(CALIBRATION, 0)
+    limit = 50 if quick else len(heldout_rows)
 
     console.print(Panel(
         f"[bold cyan]Hiver SDE Intern Benchmark Evaluation Runner[/bold cyan]\n"
         f"Target Brand: [bold white]{TARGET_BRAND}[/bold white]\n"
-        f"Evaluation Set: [bold yellow]{limit} of {total_n} Hand-Labelled Golden Samples[/bold yellow]\n"
+        f"Headline Set: [bold yellow]{min(limit, len(heldout_rows))} of {counts.get(HELDOUT, 0)} HELD-OUT rows[/bold yellow]\n"
+        f"Calibration Set (thresholds tuned here, reported separately): "
+        f"[bold yellow]{counts.get(CALIBRATION, 0)} rows[/bold yellow]\n"
+        f"Golden set total: [bold white]{total_n}[/bold white]\n"
         f"Requirement: [bold green]Reproducible in < 15 minutes[/bold green]",
         title="[bold green]Benchmark Suite[/bold green]",
         expand=False
     ))
 
-    data = full_dataset[:limit]
+    data = heldout_rows[:limit]
     y_true_intent = [d["true_intent"] for d in data]
     y_true_triage = [d["true_triage_action"] for d in data]
     references = [d["reference_resolution"] for d in data]
@@ -111,6 +121,37 @@ def run(
     prod_triage_metrics = compute_triage_metrics(y_true_triage, prod_preds_triage)
     prod_rouge = compute_rouge_similarity(references, prod_replies)
     prod_results = {"intent": prod_intent_metrics, "triage": prod_triage_metrics, "rouge": prod_rouge}
+
+    # -------------------------------------------------------------
+    # 3b. Same pipeline, CALIBRATION rows -- printed beside the held-out
+    #     numbers so the gap between "data the thresholds were tuned on" and
+    #     "data they were not" is visible instead of being a footnote nobody
+    #     can check. A large gap here means the held-out numbers are the only
+    #     ones worth quoting.
+    # -------------------------------------------------------------
+    console.print("[dim]Evaluating the same pipeline on the calibration split (for the generalisation gap)...[/dim]")
+    cal_tweets = [TweetInput(tweet_id=d["tweet_id"], text=d["text"], author_id=d["author_id"]) for d in calibration_rows]
+    cal_responses = pipeline.batch_process(cal_tweets)
+    cal_intent_metrics = compute_intent_metrics(
+        [d["true_intent"] for d in calibration_rows],
+        [r.intent.primary_intent.value for r in cal_responses],
+    )
+    cal_triage_metrics = compute_triage_metrics(
+        [d["true_triage_action"] for d in calibration_rows],
+        [r.triage.action.value for r in cal_responses],
+    )
+    split_info = {
+        "heldout_n": len(data),
+        "calibration_n": len(calibration_rows),
+        "seed": __import__("src.eval.splits", fromlist=["SPLIT_SEED"]).SPLIT_SEED,
+        "calibration_intent_accuracy": cal_intent_metrics["accuracy"],
+        "calibration_triage_accuracy": cal_triage_metrics["accuracy"],
+        "calibration_escalation_recall": cal_triage_metrics["escalation_recall"],
+        "heldout_label_counts": {
+            lbl: sum(1 for d in data if d["true_triage_action"] == lbl)
+            for lbl in sorted({d["true_triage_action"] for d in heldout_rows + calibration_rows})
+        },
+    }
 
     # -------------------------------------------------------------
     # 4. LLM-as-a-Judge Evaluation & Human Calibration
@@ -195,6 +236,7 @@ def run(
         agreement_metrics=agreement_results,
         top_failures=top_5_failure_analysis,
         latency_p95_ms=latency_p95_ms,
+        split_info=split_info,
     )
 
     benchmark_summary = write_benchmark_summary_json(
@@ -203,6 +245,7 @@ def run(
         prod_metrics=prod_results,
         agreement_metrics=agreement_results,
         latency_p95_ms=latency_p95_ms,
+        split_info=split_info,
     )
 
     elapsed_total = time.perf_counter() - start_total
@@ -282,6 +325,29 @@ def run(
     )
 
     console.print(table)
+
+    # -------------------------------------------------------------
+    # 7a. Generalisation gap: tuned-on vs reported-on
+    # -------------------------------------------------------------
+    gap_table = Table(
+        title="[bold yellow]Generalisation gap: calibration split (thresholds tuned here) vs held-out (reported above)[/bold yellow]",
+        show_header=True,
+    )
+    gap_table.add_column("Metric", style="cyan", no_wrap=True)
+    gap_table.add_column(f"Calibration (n={len(calibration_rows)})", justify="center")
+    gap_table.add_column(f"Held-out (n={len(data)})", justify="center", style="bold green")
+    gap_table.add_column("Gap", justify="center", style="bold yellow")
+    for label, cal_v, held_v in (
+        ("Intent Accuracy", cal_intent_metrics["accuracy"], prod_intent_metrics["accuracy"]),
+        ("Triage Accuracy", cal_triage_metrics["accuracy"], prod_triage_metrics["accuracy"]),
+        ("Escalation Recall", cal_triage_metrics["escalation_recall"], prod_triage_metrics["escalation_recall"]),
+    ):
+        gap_table.add_row(label, f"{cal_v*100:.1f}%", f"{held_v*100:.1f}%", f"{(held_v - cal_v)*100:+.1f}%")
+    console.print(gap_table)
+    console.print(
+        "[dim]A held-out number below its calibration counterpart is the expected direction: "
+        "thresholds were chosen against the calibration rows. Quote the held-out column.[/dim]"
+    )
 
     # -------------------------------------------------------------
     # 7b. Print the Production Intent Confusion Matrix

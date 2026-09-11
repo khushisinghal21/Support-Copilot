@@ -96,10 +96,45 @@ def generate_markdown_report(
     agreement_metrics: Dict[str, Any],
     top_failures: List[Dict[str, Any]],
     latency_p95_ms: Optional[float] = None,
+    split_info: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Compiles the formal Hiver SDE Intern benchmark evaluation report."""
 
     gs = _golden_set_stats()
+
+    # Section 5's disclosure of the calibration/held-out split is built from the
+    # real split_info handed in by the runner. When a caller does not supply it
+    # (older callers, unit tests), say so plainly rather than printing a
+    # confident-sounding sentence about a split this run did not actually use.
+    if split_info:
+        _cal_ia = split_info.get("calibration_intent_accuracy")
+        _cal_ta = split_info.get("calibration_triage_accuracy")
+        _held_ia = prod_metrics["intent"]["accuracy"]
+        _held_ta = prod_metrics["triage"]["accuracy"]
+        _clarify_held = split_info.get("heldout_label_counts", {}).get("CLARIFY", 0)
+        split_disclosure = (
+            f"**What changed:** `data/golden_eval_set.jsonl` now carries a persisted, seeded "
+            f"(`SPLIT_SEED={split_info.get('seed')}`), stratified `split` field. The sweep script reads the "
+            f"**{split_info.get('calibration_n')} calibration rows** only; every headline number in this report is "
+            f"measured on the **{split_info.get('heldout_n')} held-out rows** the thresholds were never tuned against. "
+            f"The gap is published rather than hidden: intent accuracy {_cal_ia*100:.1f}% → {_held_ia*100:.1f}% "
+            f"({(_held_ia - _cal_ia)*100:+.1f} pts) and triage accuracy {_cal_ta*100:.1f}% → {_held_ta*100:.1f}% "
+            f"({(_held_ta - _cal_ta)*100:+.1f} pts) moving from tuned-on data to held-out data. "
+        )
+        if _clarify_held == 0:
+            split_disclosure += (
+                "**A second limitation the split exposed, stated rather than smoothed over:** the golden set contains "
+                "exactly one `CLARIFY` row, so stratification could not place it on both sides -- the held-out set has "
+                "**zero** `CLARIFY` examples. Held-out triage accuracy therefore measures a two-class problem while the "
+                "system implements three actions, and the `CLARIFY` path is currently covered by unit tests only, not by "
+                "this benchmark. Fixing that needs more `CLARIFY` data, not a different split."
+            )
+    else:
+        split_disclosure = (
+            "*(This report was generated without split information, so the calibration/held-out gap is not quantified "
+            "here. Re-run `python -m src.eval.runner` to produce a report with it.)*"
+        )
+
     # The Production column of the headline table used to hardcode
     # "< 35 ms" regardless of what any run actually measured -- once
     # write_benchmark_summary_json started recording the real P95 (see its
@@ -231,6 +266,10 @@ While our **Macro-F1 of {prod_metrics['intent']['macro_f1']:.4f}** and **Triage 
 4. **Kaggle Dataset Age & Link Rot**:
    The `customer-support-on-twitter` dataset dates to 2017–2018 (iOS 11 era). References to `apple.co` URLs and specific iOS menu hierarchies may have evolved (e.g., Settings layouts in iOS 17/18). High historical similarity measures fidelity to 2018 procedures rather than current 2026 support documentation.
 
+5. **Until This Run, The Thresholds Were Tuned On The Evaluation Set**:
+   `scripts/calibrate_thresholds.py` swept `MIN_INTENT_CONFIDENCE` and `MIN_RETRIEVAL_SIMILARITY` against the golden set, and this harness then reported headline numbers on *those same rows* -- with no train/test separation anywhere in the repo. `docs/AUDIT_AND_FIX_PLAN.md` §7.10 records that sweep being run and both thresholds being changed on the strength of it (`MIN_RETRIEVAL_SIMILARITY` 0.40 → 0.20, `MIN_INTENT_CONFIDENCE` 0.35 → 0.40). Every triage number published before this run was therefore optimistically biased by construction, and none of the four caveats above disclosed it.
+   {split_disclosure}
+
 ---
 
 ## 6. What We'd Do Next With One More Week
@@ -273,6 +312,7 @@ def write_benchmark_summary_json(
     prod_metrics: Dict[str, Any],
     agreement_metrics: Dict[str, Any],
     latency_p95_ms: Optional[float] = None,
+    split_info: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Writes a small, machine-readable sibling of docs/REPORT.md so the live
     dashboard (src/server.py's /api/benchmark-summary) can render the real
@@ -293,6 +333,11 @@ def write_benchmark_summary_json(
     summary = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "golden_set": gs,
+        # Which rows these numbers came from. Recorded here so the dashboard can
+        # never display a headline figure without being able to say it was
+        # measured on rows the thresholds were not tuned against -- the bias
+        # documented in REPORT.md section 5, item 5.
+        "split": split_info or {"note": "run produced no split information"},
         "triage": {
             "trivial": {
                 "accuracy": trivial_metrics["triage"]["accuracy"],

@@ -1,32 +1,45 @@
 {
-  "generated_at": "2026-09-10T17:10:47.451665+00:00",
+  "generated_at": "2026-09-11T11:58:21.273430+00:00",
   "golden_set": {
     "n": 188,
     "n_edge": 38,
     "pct_edge": 20
   },
+  "split": {
+    "heldout_n": 124,
+    "calibration_n": 64,
+    "seed": 20260911,
+    "calibration_intent_accuracy": 0.5781,
+    "calibration_triage_accuracy": 0.6875,
+    "calibration_escalation_recall": 1.0,
+    "heldout_label_counts": {
+      "AUTO_HANDLE": 103,
+      "CLARIFY": 0,
+      "ESCALATE": 21
+    }
+  },
   "triage": {
     "trivial": {
-      "accuracy": 0.8245,
+      "accuracy": 0.8306,
       "escalation_recall": 0.0,
-      "missed_escalation_count": 32
+      "missed_escalation_count": 21
     },
     "simple": {
-      "accuracy": 0.75,
-      "escalation_recall": 0.25,
-      "missed_escalation_count": 24
+      "accuracy": 0.7581,
+      "escalation_recall": 0.3333,
+      "missed_escalation_count": 14
     },
     "production": {
-      "accuracy": 0.6011,
-      "escalation_recall": 0.9375,
+      "accuracy": 0.629,
+      "escalation_recall": 0.9048,
       "missed_escalation_count": 2,
-      "total_escalations_true": 32
+      "total_escalations_true": 21
     }
   },
   "intent": {
     "production": {
-      "macro_f1": 0.5587,
-      "accuracy": 0.6223,
+      "macro_f1": 0.6029,
+      "accuracy": 0.6371,
       "labels": [
         "ACCOUNT_BILLING_ICLOUD",
         "HARDWARE_AND_BATTERY",
@@ -36,49 +49,49 @@
       ],
       "confusion_matrix": [
         [
-          28,
+          19,
+          0,
           0,
           1,
-          2,
+          4
+        ],
+        [
+          1,
+          22,
+          0,
+          6,
           5
         ],
         [
-          2,
-          25,
           1,
-          13,
+          2,
+          5,
+          1,
+          2
+        ],
+        [
+          1,
+          4,
+          0,
+          26,
           6
         ],
         [
-          6,
-          4,
-          4,
-          3,
-          3
-        ],
-        [
+          5,
           2,
-          1,
-          1,
-          45,
-          6
-        ],
-        [
-          9,
           3,
-          2,
           1,
-          15
+          7
         ]
       ]
     }
   },
   "judge": {
     "simple": {
-      "overall_score": 3.95
+      "overall_score": 3.97
     },
     "production": {
-      "overall_score": 4.55
+      "overall_score": 4.08
     }
   },
   "human_agreement": {
@@ -88,6 +101,6 @@
     "num_samples": 50
   },
   "latency_ms": {
-    "p95_production": 44.09
+    "p95_production": 58.96
   }
 }

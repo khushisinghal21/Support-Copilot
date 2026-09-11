@@ -1,12 +1,13 @@
 """Empirically calibrates MIN_INTENT_CONFIDENCE and MIN_RETRIEVAL_SIMILARITY
-against the real golden set, instead of the values in src/config.py being a
-guess someone typed in once and never revisited.
+against the CALIBRATION SPLIT of the golden set, instead of the values in
+src/config.py being a guess someone typed in once and never revisited.
 
 WHY THIS EXISTS
 ----------------
 The audit (docs/AUDIT_AND_FIX_PLAN.md) found a real doc/code mismatch: the
 README claimed the intent-confidence guard fires below tau=0.60, while
-config.py actually set MIN_INTENT_CONFIDENCE=0.35. Neither number had ever
+config.py at the time set MIN_INTENT_CONFIDENCE=0.35 (it is 0.40 now, changed by
+the section 7.10 sweep). Neither number had ever
 been checked against data -- they were both just typed in. This script
 replaces "pick a threshold and hope" with an actual precision/recall sweep:
 
@@ -27,25 +28,35 @@ replaces "pick a threshold and hope" with an actual precision/recall sweep:
      unnecessary human review) that's a product decision, not a purely
      statistical one.
 
-WHY IT HASN'T BEEN RUN YET
-----------------------------
-This script needs SemanticCentroidClassifier and HistoricalRetriever, both
-of which load the sentence-transformers embedding model
-`all-MiniLM-L6-v2`. In the sandboxed environment used to audit and fix this
-codebase, downloading that model from huggingface.co was blocked at the
-network policy layer (confirmed with a direct curl test returning 403, both
-in the cloud tool-runner and the local device shell) -- see
-docs/AUDIT_AND_FIX_PLAN.md for the full trail. This script is believed
-correct (it only calls the same public methods HistoricalRetriever/
-SemanticCentroidClassifier already expose, exercised elsewhere in the test
-suite) but could not be executed end-to-end in that environment. Run it
-yourself in a normal terminal with internet access:
+WHY IT ONLY READS THE CALIBRATION SPLIT
+----------------------------------------
+It used to sweep the entire golden set -- the same rows src/eval/runner.py then
+reported headline numbers on. Thresholds tuned on the evaluation data make every
+reported triage number optimistically biased, and nothing disclosed that. Since
+the split was added (src/eval/splits.py), this script sees the `calibration`
+rows only: roughly a third of the set, stratified on triage label and edge-case
+status. The held-out majority is never read here, so a threshold chosen from
+this output is not chosen on the data it will later be scored against.
+
+RUNNING IT
+-----------
+This script loads the sentence-transformers embedding model `all-MiniLM-L6-v2`
+via SemanticCentroidClassifier and HistoricalRetriever:
 
     python scripts/calibrate_thresholds.py
 
-Then decide whether to change MIN_INTENT_CONFIDENCE / MIN_RETRIEVAL_SIMILARITY
-in src/config.py based on what it reports for *your* golden set (which may
-have grown or changed further since this was written).
+An earlier version of this docstring said the script had never been executed,
+because huggingface.co was blocked at the network policy layer in the
+environment where it was written (a direct curl returned 403, in both the cloud
+tool-runner and the local device shell). That is no longer accurate: it has since
+been run for real, and docs/AUDIT_AND_FIX_PLAN.md section 7.10 records the sweep
+output and the threshold changes made on the strength of it. If you hit the same
+network block, point EMBEDDING_MODEL_NAME at a local copy of the model directory
+instead of a hub id.
+
+Whatever it reports, it does not silently overwrite src/config.py -- the right
+threshold depends on the real cost ratio between a missed safety escalation and
+an unnecessary human review, which is a product decision, not a statistical one.
 """
 
 import json
@@ -61,7 +72,7 @@ from typing import List, Dict, Tuple
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.config import GOLDEN_SET_PATH
+from src.eval.splits import CALIBRATION, load_golden_rows
 from src.intent.classifier import SemanticCentroidClassifier
 from src.drafting.retriever import HistoricalRetriever
 
@@ -72,8 +83,9 @@ SIMILARITY_CANDIDATES = [round(0.05 * i, 2) for i in range(2, 16)]  # 0.10 .. 0.
 
 
 def _load_golden() -> List[Dict]:
-    with open(GOLDEN_SET_PATH, "r", encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
+    """Calibration rows only -- see this module's docstring. Reading the held-out
+    rows here is the bug this function exists to prevent."""
+    return load_golden_rows(split=CALIBRATION)
 
 
 def _collect_confidence_data(rows: List[Dict], clf: SemanticCentroidClassifier) -> List[Tuple[float, bool]]:
@@ -142,7 +154,10 @@ def _sweep_similarity(data: List[Tuple[float, bool]]) -> None:
 
 def main():
     rows = _load_golden()
-    print(f"Loaded {len(rows)} golden-set rows from {GOLDEN_SET_PATH}")
+    print(
+        f"Loaded {len(rows)} CALIBRATION-split rows "
+        f"(the held-out rows are deliberately not read by this script)"
+    )
 
     print("Instantiating SemanticCentroidClassifier (downloads all-MiniLM-L6-v2 on first run)...")
     clf = SemanticCentroidClassifier()
