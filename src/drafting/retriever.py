@@ -1,17 +1,17 @@
 """Semantic retriever for grounding replies on historical resolutions."""
 
-from typing import List, Optional
-from src.models import RetrievalResult, HistoricalCitation
+
 from src.drafting.vector_store import HistoricalVectorStore
+from src.models import HistoricalCitation, RetrievalResult
 
 
 class HistoricalRetriever:
     """Retrieves top-k historical Apple Support resolution pairs."""
 
-    def __init__(self, vector_store: Optional[HistoricalVectorStore] = None):
+    def __init__(self, vector_store: HistoricalVectorStore | None = None):
         self.vector_store = vector_store or HistoricalVectorStore()
 
-    def retrieve(self, query: str, intent: Optional[str] = None, k: int = 3) -> RetrievalResult:
+    def retrieve(self, query: str, intent: str | None = None, k: int = 3) -> RetrievalResult:
         """Retrieves top-k relevant resolution snippets and returns structured RetrievalResult."""
         results = self.vector_store.query(query_text=query, intent=intent, top_k=k)
 
@@ -20,11 +20,11 @@ class HistoricalRetriever:
         distances = results.get("distances", [[]])[0]
         ids = results.get("ids", [[]])[0]
 
-        citations: List[HistoricalCitation] = []
-        snippets: List[str] = []
-        scores: List[float] = []
+        citations: list[HistoricalCitation] = []
+        snippets: list[str] = []
+        scores: list[float] = []
 
-        for doc_id, doc_text, meta, dist in zip(ids, documents, metadatas, distances):
+        for doc_id, doc_text, meta, dist in zip(ids, documents, metadatas, distances, strict=False):
             # Chroma cosine distance = 1 - cosine_similarity
             similarity = max(0.0, min(1.0, 1.0 - float(dist)))
             agent_reply = meta.get("agent_reply", "")

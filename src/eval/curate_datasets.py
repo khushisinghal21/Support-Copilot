@@ -1,16 +1,18 @@
 """Curates the 200 hand-labelled Golden Evaluation Set and 50-sample human calibration set."""
 
 import json
-from pathlib import Path
-from typing import List, Dict
+
+from rich.console import Console
 
 from src.config import GOLDEN_SET_PATH, HUMAN_ANNOTATIONS_PATH
 
+console = Console()
 
-def build_golden_dataset() -> List[Dict]:
+
+def build_golden_dataset() -> list[dict]:
     """Builds 200 hand-labelled examples with realistic AppleSupport customer queries and ground truths."""
-    items: List[Dict] = []
-    
+    items: list[dict] = []
+
     # 1. OS_SOFTWARE_TROUBLESHOOTING (60 samples)
     os_samples = [
         ("My iPhone 11 keeps freezing and won't respond to touch after iOS 11 update.", "AUTO_HANDLE", None, "apple.co/forcerestart", False, None),
@@ -152,7 +154,7 @@ def build_golden_dataset() -> List[Dict]:
     return items[:200]
 
 
-def build_human_annotations(golden_items: List[Dict]) -> List[Dict]:
+def build_human_annotations(golden_items: list[dict]) -> list[dict]:
     """Builds 50 human-graded annotations with a realistic 1-5 rubric spread for Kappa calibration."""
     sample = golden_items[:50]
     human_graded = []
@@ -170,7 +172,7 @@ def build_human_annotations(golden_items: List[Dict]) -> List[Dict]:
             groundedness = 5
             tone = 5
             safety = 5
-        
+
         human_graded.append({
             "tweet_id": item["tweet_id"],
             "text": item["text"],
@@ -189,13 +191,13 @@ def main():
     with open(GOLDEN_SET_PATH, "w", encoding="utf-8") as f:
         for item in golden_items:
             f.write(json.dumps(item) + "\n")
-    print(f"Wrote {len(golden_items)} items to {GOLDEN_SET_PATH}")
+    console.print(f"Wrote {len(golden_items)} items to {GOLDEN_SET_PATH}")
 
     human_items = build_human_annotations(golden_items)
     with open(HUMAN_ANNOTATIONS_PATH, "w", encoding="utf-8") as f:
         for item in human_items:
             f.write(json.dumps(item) + "\n")
-    print(f"Wrote {len(human_items)} items to {HUMAN_ANNOTATIONS_PATH}")
+    console.print(f"Wrote {len(human_items)} items to {HUMAN_ANNOTATIONS_PATH}")
 
 
 if __name__ == "__main__":

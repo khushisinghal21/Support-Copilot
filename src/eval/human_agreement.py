@@ -22,10 +22,10 @@ apples-to-apples comparison, and one that runs without a model download.
 """
 
 import json
-from typing import Dict, Optional
+
 import numpy as np
-from sklearn.metrics import cohen_kappa_score
 from scipy.stats import pearsonr
+from sklearn.metrics import cohen_kappa_score
 
 from src.config import HUMAN_ANNOTATIONS_PATH
 from src.eval.judge import LLMJudge
@@ -48,7 +48,7 @@ def _safe_kappa(a, b):
     return None if np.isnan(k) else round(float(k), 4)
 
 
-def _interpret(k: Optional[float]) -> str:
+def _interpret(k: float | None) -> str:
     if k is None:
         return "undefined (insufficient score variance to compute kappa -- see exact agreement instead)"
     if k < 0:
@@ -64,12 +64,12 @@ def _interpret(k: Optional[float]) -> str:
     return "Almost perfect agreement"
 
 
-def compute_human_judge_agreement(sample_path: Optional[str] = None) -> Dict:
+def compute_human_judge_agreement(sample_path: str | None = None) -> dict:
     """Evaluates how well the LLM judge agrees with the human-proxy rubric
     scores across the calibration sample."""
     path = sample_path or str(HUMAN_ANNOTATIONS_PATH)
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         samples = [json.loads(line) for line in f if line.strip()]
 
     judge = LLMJudge()

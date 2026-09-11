@@ -41,7 +41,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import List, NamedTuple
+from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class LinkCheckResult(NamedTuple):
     detail: str
 
 
-def extract_urls(text: str) -> List[str]:
+def extract_urls(text: str) -> list[str]:
     """Finds candidate URLs (full or bare apple.co-style) in a drafted reply."""
     return _URL_PATTERN.findall(text)
 
@@ -116,6 +116,6 @@ def verify_url(url: str, timeout: float = 3.0) -> LinkCheckResult:
         return LinkCheckResult(url, "inconclusive", str(e))
 
 
-def verify_all_urls(text: str, timeout: float = 3.0) -> List[LinkCheckResult]:
+def verify_all_urls(text: str, timeout: float = 3.0) -> list[LinkCheckResult]:
     """Extracts and verifies every URL found in the given text."""
     return [verify_url(u, timeout=timeout) for u in extract_urls(text)]

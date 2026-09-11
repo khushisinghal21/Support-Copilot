@@ -1,9 +1,10 @@
 """Unit tests for Grounded Reply Drafting and Guardrails."""
 
 import pytest
-from src.drafting.retriever import HistoricalRetriever
-from src.drafting.guardrails import OutputGuardrail
+
 from src.drafting.generator import GroundedReplyGenerator
+from src.drafting.guardrails import OutputGuardrail
+from src.drafting.retriever import HistoricalRetriever
 from src.models import RetrievalResult
 
 
@@ -149,7 +150,7 @@ def test_generator_discards_max_tokens_truncated_output():
     gen = GroundedReplyGenerator(provider="mock")
     gen._llm = _FakeLLM(_FakeGeminiResponse("We'd like to", finish_reason_name="MAX_TOKENS"))
     ret_res = _fake_retrieval_result()
-    reply, passed, violations = gen.generate("My iPhone battery dies in two hours", "HARDWARE_AND_BATTERY", ret_res)
+    reply, passed, _violations = gen.generate("My iPhone battery dies in two hours", "HARDWARE_AND_BATTERY", ret_res)
 
     assert reply != "We'd like to"
     assert reply in ret_res.snippets
@@ -162,7 +163,7 @@ def test_generator_discards_suspiciously_short_stop_output():
     gen = GroundedReplyGenerator(provider="mock")
     gen._llm = _FakeLLM(_FakeGeminiResponse("We'd like to", finish_reason_name="STOP"))
     ret_res = _fake_retrieval_result()
-    reply, passed, violations = gen.generate("My iPhone battery dies in two hours", "HARDWARE_AND_BATTERY", ret_res)
+    reply, _passed, _violations = gen.generate("My iPhone battery dies in two hours", "HARDWARE_AND_BATTERY", ret_res)
 
     assert reply != "We'd like to"
     assert reply in ret_res.snippets
@@ -175,6 +176,6 @@ def test_generator_accepts_complete_llm_output():
     full_reply = "We'd like to help with that. Please check Settings > Battery > Battery Health for details."
     gen._llm = _FakeLLM(_FakeGeminiResponse(full_reply, finish_reason_name="STOP"))
     ret_res = _fake_retrieval_result()
-    reply, passed, violations = gen.generate("My iPhone battery dies in two hours", "HARDWARE_AND_BATTERY", ret_res)
+    reply, _passed, _violations = gen.generate("My iPhone battery dies in two hours", "HARDWARE_AND_BATTERY", ret_res)
 
     assert reply == full_reply

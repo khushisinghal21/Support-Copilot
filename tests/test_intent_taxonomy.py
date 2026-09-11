@@ -8,7 +8,7 @@ should be checked by rerunning `python -m src.eval.runner` and re-reading
 the confusion matrix in docs/benchmark_summary.json.
 """
 
-from src.intent.taxonomy import INTENT_PROTOTYPES, INTENT_DESCRIPTIONS
+from src.intent.taxonomy import INTENT_DESCRIPTIONS, INTENT_PROTOTYPES
 from src.models import AppleIntentEnum
 
 

@@ -2,16 +2,16 @@
 
 import pytest
 from pydantic import ValidationError
+
 from src.models import (
-    TweetInput,
     AppleIntentEnum,
-    IntentResult,
-    HistoricalCitation,
-    RetrievalResult,
-    TriageAction,
     EscalationReasonCode,
-    TriageDecision,
+    IntentResult,
+    RetrievalResult,
     SupportResponse,
+    TriageAction,
+    TriageDecision,
+    TweetInput,
 )
 
 

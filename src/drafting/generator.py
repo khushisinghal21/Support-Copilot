@@ -1,11 +1,11 @@
 """Grounded Reply Generator using RAG context, LLM, and safety guardrails."""
 
 import logging
-from typing import Optional, Tuple
-from src.models import RetrievalResult
-from src.config import GEMINI_API_KEY, GEMINI_MODEL_NAME, LLM_PROVIDER, ENABLE_LIVE_LINK_CHECK
-from src.drafting.prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+
+from src.config import ENABLE_LIVE_LINK_CHECK, GEMINI_API_KEY, GEMINI_MODEL_NAME, LLM_PROVIDER
 from src.drafting.guardrails import OutputGuardrail
+from src.drafting.prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+from src.models import RetrievalResult
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +63,8 @@ class GroundedReplyGenerator:
         self,
         tweet: str,
         intent: str,
-        retrieval_result: Optional[RetrievalResult] = None,
-    ) -> Tuple[Optional[str], bool, list]:
+        retrieval_result: RetrievalResult | None = None,
+    ) -> tuple[str | None, bool, list]:
         """Generates a grounded reply and returns (reply_text, passed_guardrails, violations)."""
         retrieved_snippets = retrieval_result.snippets if retrieval_result else []
         context_str = "\n".join([f"- {s}" for s in retrieved_snippets]) if retrieved_snippets else "No specific history."
@@ -75,6 +75,7 @@ class GroundedReplyGenerator:
         if self._llm:
             try:
                 from google.genai import types
+
                 from src.llm_utils import build_thinking_config
 
                 system_with_context = SYSTEM_PROMPT.format(retrieved_context=context_str)

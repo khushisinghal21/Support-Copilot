@@ -59,10 +59,8 @@ threshold depends on the real cost ratio between a missed safety escalation and
 an unnecessary human review, which is a product decision, not a statistical one.
 """
 
-import json
 import sys
 from pathlib import Path
-from typing import List, Dict, Tuple
 
 # Allows running this as a bare script (`python scripts/calibrate_thresholds.py`)
 # from anywhere, not just via `python -m scripts.calibrate_thresholds` -- without
@@ -72,9 +70,9 @@ from typing import List, Dict, Tuple
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+from src.drafting.retriever import HistoricalRetriever
 from src.eval.splits import CALIBRATION, load_golden_rows
 from src.intent.classifier import SemanticCentroidClassifier
-from src.drafting.retriever import HistoricalRetriever
 
 # Candidate thresholds to sweep. Fine enough to see the trade-off curve's
 # shape without an unreasonable number of classifier calls.
@@ -82,13 +80,13 @@ CONFIDENCE_CANDIDATES = [round(0.05 * i, 2) for i in range(2, 16)]  # 0.10 .. 0.
 SIMILARITY_CANDIDATES = [round(0.05 * i, 2) for i in range(2, 16)]  # 0.10 .. 0.75
 
 
-def _load_golden() -> List[Dict]:
+def _load_golden() -> list[dict]:
     """Calibration rows only -- see this module's docstring. Reading the held-out
     rows here is the bug this function exists to prevent."""
     return load_golden_rows(split=CALIBRATION)
 
 
-def _collect_confidence_data(rows: List[Dict], clf: SemanticCentroidClassifier) -> List[Tuple[float, bool]]:
+def _collect_confidence_data(rows: list[dict], clf: SemanticCentroidClassifier) -> list[tuple[float, bool]]:
     """Returns (confidence, was_prediction_correct) per row."""
     out = []
     for r in rows:
@@ -98,7 +96,7 @@ def _collect_confidence_data(rows: List[Dict], clf: SemanticCentroidClassifier) 
     return out
 
 
-def _collect_similarity_data(rows: List[Dict], retriever: HistoricalRetriever) -> List[Tuple[float, bool]]:
+def _collect_similarity_data(rows: list[dict], retriever: HistoricalRetriever) -> list[tuple[float, bool]]:
     """Returns (max_similarity, is_this_row_a_true_auto_handle) per row --
     a low-grounding escalation should mostly fire on rows that genuinely
     need a human anyway, not on ones the golden set says are safe to
@@ -111,7 +109,7 @@ def _collect_similarity_data(rows: List[Dict], retriever: HistoricalRetriever) -
     return out
 
 
-def _sweep_confidence(data: List[Tuple[float, bool]]) -> None:
+def _sweep_confidence(data: list[tuple[float, bool]]) -> None:
     print("\n=== MIN_INTENT_CONFIDENCE sweep ===")
     print(f"{'tau':>6} | {'wrong preds caught':>19} | {'correct preds needlessly escalated':>36}")
     total_wrong = sum(1 for _, correct in data if not correct)
@@ -132,7 +130,7 @@ def _sweep_confidence(data: List[Tuple[float, bool]]) -> None:
     print("Current src/config.py value: MIN_INTENT_CONFIDENCE (see that file)")
 
 
-def _sweep_similarity(data: List[Tuple[float, bool]]) -> None:
+def _sweep_similarity(data: list[tuple[float, bool]]) -> None:
     print("\n=== MIN_RETRIEVAL_SIMILARITY sweep ===")
     print(f"{'tau':>6} | {'true-escalate rows below tau':>29} | {'true-auto-handle rows below tau (bad)':>38}")
     total_escalate = sum(1 for _, is_auto in data if not is_auto)

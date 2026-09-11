@@ -1,9 +1,9 @@
 """Intent taxonomy, definitions, and canonical prototype examples for @AppleSupport."""
 
-from typing import Dict, List
+
 from src.models import AppleIntentEnum
 
-INTENT_DESCRIPTIONS: Dict[AppleIntentEnum, str] = {
+INTENT_DESCRIPTIONS: dict[AppleIntentEnum, str] = {
     AppleIntentEnum.OS_SOFTWARE_TROUBLESHOOTING: (
         "Operating system bugs, iOS/macOS update issues, crashing/freezing apps, "
         "connectivity dropouts (Wi-Fi, Bluetooth, Cellular), boot loops, and system glitches."
@@ -27,7 +27,7 @@ INTENT_DESCRIPTIONS: Dict[AppleIntentEnum, str] = {
 }
 
 # Canonical seed prototypes used for semantic centroid embedding calculation
-INTENT_PROTOTYPES: Dict[AppleIntentEnum, List[str]] = {
+INTENT_PROTOTYPES: dict[AppleIntentEnum, list[str]] = {
     AppleIntentEnum.OS_SOFTWARE_TROUBLESHOOTING: [
         "My iPhone is stuck on the Apple logo after the new iOS update.",
         "Apps keep crashing and freezing on my iPad since this morning.",

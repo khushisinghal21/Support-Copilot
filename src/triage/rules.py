@@ -9,7 +9,6 @@ report). This version is deliberately more literal/specific and negation-aware.
 """
 
 import re
-from typing import Tuple, List
 
 # ---------------------------------------------------------------------------
 # PII detection
@@ -38,7 +37,7 @@ NEGATION_WORDS = re.compile(
 )
 
 
-def _is_negated(text: str, match_start: int, match_end: int = None, window: int = 20) -> bool:
+def _is_negated(text: str, match_start: int, match_end: int | None = None, window: int = 20) -> bool:
     """Returns True if a negation word appears either in the `window`
     characters immediately preceding the match, or *inside* the match span
     itself.
@@ -162,7 +161,7 @@ class RuleMatcher:
     negation-aware for hazard matches."""
 
     @staticmethod
-    def detect_pii(text: str) -> Tuple[bool, List[str]]:
+    def detect_pii(text: str) -> tuple[bool, list[str]]:
         matched = []
         if EMAIL_REGEX.search(text):
             matched.append("EMAIL_ADDRESS_DETECTED")
@@ -175,7 +174,7 @@ class RuleMatcher:
         return len(matched) > 0, matched
 
     @staticmethod
-    def detect_hardware_hazard(text: str) -> Tuple[bool, List[str]]:
+    def detect_hardware_hazard(text: str) -> tuple[bool, list[str]]:
         """Scans for physical battery swelling, smoke, fire, shock, or
         shattered/submerged hardware, skipping matches inside a negated
         clause ("not swollen", "no smoke")."""
@@ -193,7 +192,7 @@ class RuleMatcher:
         return bool(HUMAN_REQUEST_REGEX.search(text))
 
     @staticmethod
-    def detect_prompt_injection(text: str) -> Tuple[bool, List[str]]:
+    def detect_prompt_injection(text: str) -> tuple[bool, list[str]]:
         """Scans customer input for prompt-injection attempts against the
         AI drafting step. Independent of sentiment/legal detection -- an
         injection attempt can be phrased calmly."""
@@ -202,7 +201,7 @@ class RuleMatcher:
         return False, []
 
     @staticmethod
-    def detect_unsafe_advice(text: str) -> Tuple[bool, List[str]]:
+    def detect_unsafe_advice(text: str) -> tuple[bool, list[str]]:
         """Scans a DRAFTED REPLY (not customer input) for unsafe DIY
         instructions that must never be sent, regardless of source."""
         if UNSAFE_ADVICE_REGEX.search(text):

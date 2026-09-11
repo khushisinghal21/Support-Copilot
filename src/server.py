@@ -4,25 +4,30 @@ import json
 import logging
 import threading
 import time
-from collections import defaultdict
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple
-from fastapi import FastAPI, HTTPException, Request, Header
-from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
+
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from src.models import TweetInput, SupportResponse, TriageAction
-from src.pipeline import SupportPipeline
 from src.config import (
-    TARGET_BRAND,
+    API_KEY,
     BENCHMARK_SUMMARY_JSON_PATH,
     CORS_ALLOW_ORIGINS,
-    RATE_LIMIT_PER_MINUTE,
     RATE_LIMIT_BURST,
-    API_KEY,
+    RATE_LIMIT_PER_MINUTE,
+    TARGET_BRAND,
 )
+from src.logging_config import setup_logging
+from src.models import SupportResponse, TweetInput
+from src.pipeline import SupportPipeline
+
+# Configure logging before anything else can emit. Without this the 17 logger
+# call sites across src/ fell through to Python's last-resort handler: nothing
+# below WARNING appeared at all, and what did appear had no timestamp, no logger
+# name, and no request correlation.
+setup_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +82,7 @@ app.add_middleware(
 # notes in render.yaml and src/embeddings.py were already fighting; an unguarded
 # singleton quietly reintroduced it under the one condition (a cold start taking
 # real time) where concurrent first requests are most likely.
-_pipeline: Optional[SupportPipeline] = None
+_pipeline: SupportPipeline | None = None
 _pipeline_lock = threading.Lock()
 
 
@@ -104,11 +109,11 @@ def get_pipeline() -> SupportPipeline:
 # not coordinate across instances, so a multi-instance deployment would need a
 # shared store (Redis) instead.
 # ---------------------------------------------------------------------------
-_buckets: Dict[str, Tuple[float, float]] = {}  # ip -> (tokens, last_refill_ts)
+_buckets: dict[str, tuple[float, float]] = {}  # ip -> (tokens, last_refill_ts)
 _bucket_lock = threading.Lock()
 
 
-def _rate_limit_check(client_ip: str) -> Tuple[bool, float]:
+def _rate_limit_check(client_ip: str) -> tuple[bool, float]:
     """Returns (allowed, retry_after_seconds). A limit of 0 disables the check."""
     if RATE_LIMIT_PER_MINUTE <= 0:
         return True, 0.0
@@ -125,7 +130,7 @@ def _rate_limit_check(client_ip: str) -> Tuple[bool, float]:
         return False, max(1.0, (1.0 - tokens) / refill_per_sec)
 
 
-def _require_api_key(provided: Optional[str]) -> None:
+def _require_api_key(provided: str | None) -> None:
     """No-op unless API_KEY is configured, so local dev and the existing public
     demo are unaffected by this existing."""
     if not API_KEY:
@@ -137,7 +142,7 @@ def _require_api_key(provided: Optional[str]) -> None:
 class QueryRequest(BaseModel):
     text: str = Field(..., min_length=1, description="Customer tweet text")
     author_id: str = Field(default="customer_web_user", description="Author handle or identifier")
-    tweet_id: Optional[str] = Field(None, description="Optional custom tweet ID")
+    tweet_id: str | None = Field(None, description="Optional custom tweet ID")
 
 
 SAMPLE_SCENARIOS = [
@@ -217,7 +222,7 @@ def get_benchmark_summary():
     if not BENCHMARK_SUMMARY_JSON_PATH.exists():
         return {"available": False, "reason": "No benchmark run yet. Run `python -m src.eval.runner` to generate docs/benchmark_summary.json."}
     try:
-        with open(BENCHMARK_SUMMARY_JSON_PATH, "r", encoding="utf-8") as f:
+        with open(BENCHMARK_SUMMARY_JSON_PATH, encoding="utf-8") as f:
             data = json.load(f)
         data["available"] = True
         return data
@@ -229,7 +234,7 @@ def get_benchmark_summary():
 def process_tweet(
     req: QueryRequest,
     request: Request,
-    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ):
     _require_api_key(x_api_key)
 

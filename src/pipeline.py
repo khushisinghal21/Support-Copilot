@@ -1,27 +1,28 @@
 """End-to-end AI Customer Support & Triage Pipeline orchestrator."""
 
 import json
+import logging
 import queue
 import threading
 import time
-import logging
-from typing import List, Optional
+
+from src.config import DECISION_LOG_PATH, DECISION_LOG_QUEUE_MAX
+from src.drafting.generator import GroundedReplyGenerator
+from src.drafting.retriever import HistoricalRetriever
+from src.intent.classifier import SemanticCentroidClassifier
+from src.logging_config import reset_tweet_id, set_tweet_id
 from src.models import (
-    TweetInput,
-    SupportResponse,
+    AppleIntentEnum,
+    EscalationReasonCode,
     IntentResult,
     RetrievalResult,
-    TriageDecision,
+    SupportResponse,
     TriageAction,
-    EscalationReasonCode,
-    AppleIntentEnum,
+    TriageDecision,
+    TweetInput,
 )
-from src.intent.classifier import SemanticCentroidClassifier
-from src.drafting.retriever import HistoricalRetriever
-from src.drafting.generator import GroundedReplyGenerator
 from src.triage.engine import TriageEngine
 from src.triage.reasons import get_clarifying_question
-from src.config import DECISION_LOG_PATH, DECISION_LOG_QUEUE_MAX
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +46,8 @@ logger = logging.getLogger(__name__)
 # memory and some counted, logged, dropped audit lines, instead of the process.
 # Both guarantees hold: a logging failure cannot raise into the request path,
 # and a logging slowdown cannot extend it.
-_log_queue: "queue.Queue[Optional[dict]]" = queue.Queue(maxsize=DECISION_LOG_QUEUE_MAX)
-_log_writer_thread: Optional[threading.Thread] = None
+_log_queue: "queue.Queue[dict | None]" = queue.Queue(maxsize=DECISION_LOG_QUEUE_MAX)
+_log_writer_thread: threading.Thread | None = None
 _log_writer_lock = threading.Lock()
 _dropped_log_rows = 0
 
@@ -130,10 +131,10 @@ class SupportPipeline:
 
     def __init__(
         self,
-        intent_classifier: Optional[SemanticCentroidClassifier] = None,
-        retriever: Optional[HistoricalRetriever] = None,
-        reply_generator: Optional[GroundedReplyGenerator] = None,
-        triage_engine: Optional[TriageEngine] = None,
+        intent_classifier: SemanticCentroidClassifier | None = None,
+        retriever: HistoricalRetriever | None = None,
+        reply_generator: GroundedReplyGenerator | None = None,
+        triage_engine: TriageEngine | None = None,
     ):
         self.intent_classifier = intent_classifier or SemanticCentroidClassifier()
         self.retriever = retriever or HistoricalRetriever()
@@ -144,6 +145,11 @@ class SupportPipeline:
         """Processes a single incoming customer tweet through the end-to-end pipeline."""
         start_time = time.perf_counter()
 
+        # Bind the correlation id for every log line emitted below this point,
+        # including ones from modules that know nothing about it. Reset in the
+        # finally block: in a thread pool a leaked id would mislabel the next
+        # request handled by the same worker, which is worse than no id at all.
+        token = set_tweet_id(tweet.tweet_id)
         try:
             # 1. Intent Classification
             intent_res: IntentResult = self.intent_classifier.predict(tweet.text)
@@ -157,7 +163,7 @@ class SupportPipeline:
             #    This is the order README.md's flow diagram always claimed; until
             #    this change the code ran classify -> retrieve -> generate -> triage
             #    and contradicted it.
-            input_decision: Optional[TriageDecision] = self.triage_engine.evaluate_input(tweet)
+            input_decision: TriageDecision | None = self.triage_engine.evaluate_input(tweet)
             if input_decision is not None:
                 duration_ms = (time.perf_counter() - start_time) * 1000.0
                 response = SupportResponse(
@@ -234,7 +240,7 @@ class SupportPipeline:
                 ),
                 triage=TriageDecision(
                     action=TriageAction.ESCALATE,
-                    stated_reason=f"Pipeline exception occurred, failing closed to protect customer: {str(e)}",
+                    stated_reason=f"Pipeline exception occurred, failing closed to protect customer: {e!s}",
                     reason_code=EscalationReasonCode.SYSTEM_EXCEPTION_FAIL_CLOSED,
                     risk_score=1.0,
                     triggered_rules=["CIRCUIT_BREAKER_FAIL_CLOSED"],
@@ -243,7 +249,9 @@ class SupportPipeline:
                 grounding_context=None,
                 execution_time_ms=round(duration_ms, 2),
             )
+        finally:
+            reset_tweet_id(token)
 
-    def batch_process(self, tweets: List[TweetInput]) -> List[SupportResponse]:
+    def batch_process(self, tweets: list[TweetInput]) -> list[SupportResponse]:
         """Processes a batch of tweets sequentially."""
         return [self.process(tweet) for tweet in tweets]

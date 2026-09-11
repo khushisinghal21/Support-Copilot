@@ -23,7 +23,7 @@ from src.eval.splits import assign_splits, split_counts
 
 
 def main() -> None:
-    with open(GOLDEN_SET_PATH, "r", encoding="utf-8") as f:
+    with open(GOLDEN_SET_PATH, encoding="utf-8") as f:
         rows = [json.loads(line) for line in f if line.strip()]
 
     before = sum(1 for r in rows if "split" in r)

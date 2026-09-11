@@ -1,10 +1,10 @@
 """Generates the comprehensive benchmark report docs/REPORT.md (Deliverable 4 & 5)."""
 
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Dict, Any, List, Optional
-from src.config import REPORT_OUTPUT_PATH, BENCHMARK_SUMMARY_JSON_PATH, TARGET_BRAND, GOLDEN_SET_PATH
 import json
+from datetime import UTC, datetime
+from typing import Any
+
+from src.config import BENCHMARK_SUMMARY_JSON_PATH, GOLDEN_SET_PATH, REPORT_OUTPUT_PATH, TARGET_BRAND
 
 
 def _fmt_kappa(k) -> str:
@@ -15,14 +15,14 @@ def _fmt_kappa(k) -> str:
     return f"{k:.4f}" if isinstance(k, (int, float)) else "undefined"
 
 
-def _abbreviate_labels(labels: List[str]) -> Dict[str, str]:
+def _abbreviate_labels(labels: list[str]) -> dict[str, str]:
     """Maps each intent label to a short, unique code (initials of its
     underscore-separated words) so the confusion matrix table below stays
     narrow enough to read -- the raw labels (e.g.
     OUT_OF_SCOPE_AMBIGUOUS) are too wide to use as repeated column headers
     in a 5x5+ grid."""
     used = set()
-    abbrevs: Dict[str, str] = {}
+    abbrevs: dict[str, str] = {}
     for lbl in labels:
         parts = [p for p in lbl.split("_") if p]
         base = ("".join(p[0] for p in parts).upper() or lbl[:3].upper())
@@ -36,7 +36,7 @@ def _abbreviate_labels(labels: List[str]) -> Dict[str, str]:
     return abbrevs
 
 
-def _render_confusion_matrix_markdown(labels: List[str], matrix: List[List[int]]) -> str:
+def _render_confusion_matrix_markdown(labels: list[str], matrix: list[list[int]]) -> str:
     """Renders the intent-classification confusion matrix that
     src/eval/metrics.py's compute_intent_metrics() already computes on every
     run (`confusion_matrix` + `labels` in its return dict) but that, before
@@ -55,30 +55,30 @@ def _render_confusion_matrix_markdown(labels: List[str], matrix: List[List[int]]
         return "_No confusion matrix available for this run (no intent predictions were made)._\n"
 
     abbrevs = _abbreviate_labels(labels)
-    header = "| True \\ Predicted | " + " | ".join(abbrevs[l] for l in labels) + " |\n"
+    header = "| True \\ Predicted | " + " | ".join(abbrevs[lbl] for lbl in labels) + " |\n"
     sep = "| :--- | " + " | ".join([":---:"] * len(labels)) + " |\n"
     rows = ""
     for i, true_label in enumerate(labels):
         cells = []
-        for j, pred_label in enumerate(labels):
+        for j in range(len(labels)):
             count = matrix[i][j]
             # Bold the diagonal (correct predictions) so a reader can spot
             # off-diagonal mass -- misclassification -- at a glance.
             cells.append(f"**{count}**" if i == j else (str(count) if count else "&middot;"))
         rows += f"| **{abbrevs[true_label]}** | " + " | ".join(cells) + " |\n"
 
-    legend = "\n".join(f"- `{abbrevs[l]}` = `{l}`" for l in labels)
+    legend = "\n".join(f"- `{abbrevs[lbl]}` = `{lbl}`" for lbl in labels)
 
     return f"{header}{sep}{rows}\n**Legend**\n\n{legend}\n"
 
 
-def _golden_set_stats() -> Dict[str, Any]:
+def _golden_set_stats() -> dict[str, Any]:
     """Reads the actual golden set on disk rather than hardcoding its size
     and edge-case share -- the header used to claim '200 Hand-Labelled Test
     Queries (including 20% verified edge cases)' unconditionally, which
     silently went stale the moment the file was rebuilt to 188 rows."""
     try:
-        with open(GOLDEN_SET_PATH, "r", encoding="utf-8") as f:
+        with open(GOLDEN_SET_PATH, encoding="utf-8") as f:
             rows = [json.loads(line) for line in f if line.strip()]
         n = len(rows)
         n_edge = sum(1 for r in rows if r.get("is_edge_case"))
@@ -89,14 +89,14 @@ def _golden_set_stats() -> Dict[str, Any]:
 
 
 def generate_markdown_report(
-    trivial_metrics: Dict[str, Any],
-    simple_metrics: Dict[str, Any],
-    prod_metrics: Dict[str, Any],
-    judge_metrics: Dict[str, Any],
-    agreement_metrics: Dict[str, Any],
-    top_failures: List[Dict[str, Any]],
-    latency_p95_ms: Optional[float] = None,
-    split_info: Optional[Dict[str, Any]] = None,
+    trivial_metrics: dict[str, Any],
+    simple_metrics: dict[str, Any],
+    prod_metrics: dict[str, Any],
+    judge_metrics: dict[str, Any],
+    agreement_metrics: dict[str, Any],
+    top_failures: list[dict[str, Any]],
+    latency_p95_ms: float | None = None,
+    split_info: dict[str, Any] | None = None,
 ) -> str:
     """Compiles the formal Hiver SDE Intern benchmark evaluation report."""
 
@@ -148,7 +148,7 @@ def generate_markdown_report(
         prod_metrics["intent"].get("confusion_matrix", []),
     )
 
-    report_content = f"""# Benchmark Report: AI Customer Support & Triage Agent for {TARGET_BRAND}
+    report_content = rf"""# Benchmark Report: AI Customer Support & Triage Agent for {TARGET_BRAND}
 
 **Author**: Hiver SDE Intern Candidate
 **Target Brand**: `{TARGET_BRAND}`
@@ -327,13 +327,13 @@ While our **Macro-F1 of {prod_metrics['intent']['macro_f1']:.4f}** and **Triage 
 
 
 def write_benchmark_summary_json(
-    trivial_metrics: Dict[str, Any],
-    simple_metrics: Dict[str, Any],
-    prod_metrics: Dict[str, Any],
-    agreement_metrics: Dict[str, Any],
-    latency_p95_ms: Optional[float] = None,
-    split_info: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    trivial_metrics: dict[str, Any],
+    simple_metrics: dict[str, Any],
+    prod_metrics: dict[str, Any],
+    agreement_metrics: dict[str, Any],
+    latency_p95_ms: float | None = None,
+    split_info: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Writes a small, machine-readable sibling of docs/REPORT.md so the live
     dashboard (src/server.py's /api/benchmark-summary) can render the real
     numbers from the most recent eval run instead of a human hand-copying
@@ -351,7 +351,7 @@ def write_benchmark_summary_json(
     gs = _golden_set_stats()
 
     summary = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "golden_set": gs,
         # Which rows these numbers came from. Recorded here so the dashboard can
         # never display a headline figure without being able to say it was

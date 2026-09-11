@@ -18,14 +18,14 @@ import json
 import random
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
 random.seed(42)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
-from src.data.heuristic_intent import heuristic_intent  # noqa: E402
+from src.data.heuristic_intent import heuristic_intent
 
 DATA_DIR = REPO_ROOT / "data"
 SRC_PAIRS = DATA_DIR / "apple_support_kaggle_pairs.jsonl"

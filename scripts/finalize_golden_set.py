@@ -87,7 +87,7 @@ def match_override(text: str):
 
 
 def main():
-    pool = [json.loads(l) for l in open(POOL_PATH, encoding="utf-8")]
+    pool = [json.loads(lbl) for lbl in open(POOL_PATH, encoding="utf-8")]
 
     finalized = []
     used_texts = set()

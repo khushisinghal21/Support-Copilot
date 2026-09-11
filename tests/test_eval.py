@@ -1,11 +1,12 @@
 """Unit tests for Evaluation Harness, Golden Set, and Baselines."""
 
 import json
-from pathlib import Path
+
 import pytest
+
 from src.config import GOLDEN_SET_PATH, REPORT_OUTPUT_PATH
-from src.eval.human_agreement import compute_human_judge_agreement
 from src.eval import report_generator
+from src.eval.human_agreement import compute_human_judge_agreement
 
 # The assignment brief asks for a "150-250 example hand-labelled golden eval
 # set" -- there is no reason to pin an exact count (the previous version of
@@ -18,7 +19,7 @@ MAX_GOLDEN_ROWS = 250
 
 def test_golden_dataset_schema():
     assert GOLDEN_SET_PATH.exists(), f"Golden dataset missing at {GOLDEN_SET_PATH}"
-    with open(GOLDEN_SET_PATH, "r", encoding="utf-8") as f:
+    with open(GOLDEN_SET_PATH, encoding="utf-8") as f:
         records = [json.loads(line) for line in f if line.strip()]
 
     assert MIN_GOLDEN_ROWS <= len(records) <= MAX_GOLDEN_ROWS, (

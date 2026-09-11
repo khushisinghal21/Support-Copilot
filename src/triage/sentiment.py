@@ -23,7 +23,7 @@ one flat keyword list:
 """
 
 import re
-from typing import Tuple, List
+
 from src.config import FRUSTRATION_THRESHOLD
 
 # Tier 1: genuine account compromise -- escalate-worthy on a single mention,
@@ -84,15 +84,15 @@ class SentimentAnalyzer:
     def __init__(self, threshold: float = FRUSTRATION_THRESHOLD):
         self.threshold = threshold
 
-    def compute_frustration(self, text: str) -> Tuple[float, List[str]]:
+    def compute_frustration(self, text: str) -> tuple[float, list[str]]:
         """Calculates a normalized customer frustration score [0.0, 1.0] and triggered markers."""
         score = 0.0
         markers = []
 
-        compromise_matches = list(set(m.lower() for m in ACCOUNT_COMPROMISE_PATTERN.findall(text)))
-        strong_matches = list(set(m.lower() for m in STRONG_LEGAL_PATTERN.findall(text)))
-        soft_matches = list(set(m.lower() for m in SOFT_CHURN_PATTERN.findall(text)))
-        anger_matches = list(set(m.lower() for m in ANGER_PATTERN.findall(text)))
+        compromise_matches = list({m.lower() for m in ACCOUNT_COMPROMISE_PATTERN.findall(text)})
+        strong_matches = list({m.lower() for m in STRONG_LEGAL_PATTERN.findall(text)})
+        soft_matches = list({m.lower() for m in SOFT_CHURN_PATTERN.findall(text)})
+        anger_matches = list({m.lower() for m in ANGER_PATTERN.findall(text)})
         has_victim_phrase = bool(VICTIM_PHRASE_REGEX.search(text))
 
         if compromise_matches:
@@ -136,7 +136,7 @@ class SentimentAnalyzer:
         normalized_score = min(1.0, round(score, 2))
         return normalized_score, markers
 
-    def is_severe_frustration(self, text: str) -> Tuple[bool, float, List[str]]:
+    def is_severe_frustration(self, text: str) -> tuple[bool, float, list[str]]:
         """Returns True if frustration exceeds the threshold."""
         score, markers = self.compute_frustration(text)
         return score >= self.threshold, score, markers

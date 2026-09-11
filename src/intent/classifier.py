@@ -1,10 +1,10 @@
 """Production Semantic Centroid Intent Classifier with calibrated confidence scoring."""
 
-from typing import Dict, List, Optional
 import numpy as np
-from src.models import AppleIntentEnum, IntentResult
-from src.intent.taxonomy import INTENT_PROTOTYPES
+
 from src.config import EMBEDDING_MODEL_NAME, MIN_INTENT_CONFIDENCE
+from src.intent.taxonomy import INTENT_PROTOTYPES
+from src.models import AppleIntentEnum, IntentResult
 
 
 class SemanticCentroidClassifier:
@@ -34,7 +34,7 @@ class SemanticCentroidClassifier:
         self.confidence_threshold = confidence_threshold
         self.temperature = temperature
         self.encoder = get_encoder(model_name)
-        self.centroids: Dict[AppleIntentEnum, np.ndarray] = {}
+        self.centroids: dict[AppleIntentEnum, np.ndarray] = {}
         self._build_default_centroids()
 
     def _build_default_centroids(self):
@@ -59,7 +59,7 @@ class SemanticCentroidClassifier:
         query_vec = self.encoder.encode([text], convert_to_numpy=True, normalize_embeddings=True)[0]
 
         # Calculate cosine similarity with each intent centroid
-        similarities: Dict[AppleIntentEnum, float] = {}
+        similarities: dict[AppleIntentEnum, float] = {}
         for intent, centroid in self.centroids.items():
             cos_sim = float(np.dot(query_vec, centroid))
             similarities[intent] = cos_sim
@@ -70,7 +70,7 @@ class SemanticCentroidClassifier:
         exp_scaled = np.exp((sim_values - np.max(sim_values)) / self.temperature)
         probs = exp_scaled / np.sum(exp_scaled)
 
-        prob_dist = {i.value: float(p) for i, p in zip(intents_list, probs)}
+        prob_dist = {i.value: float(p) for i, p in zip(intents_list, probs, strict=False)}
 
         # Rank by probability
         ranked_indices = np.argsort(probs)[::-1]

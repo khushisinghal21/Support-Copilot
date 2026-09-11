@@ -10,13 +10,11 @@ model -- they exercise only the deterministic regex/rule layer, so they run
 in any environment, including one without network access.
 """
 
-import pytest
+from src.drafting.guardrails import OutputGuardrail
+from src.models import AppleIntentEnum, EscalationReasonCode, IntentResult, TriageAction, TweetInput
+from src.triage.engine import TriageEngine
 from src.triage.rules import RuleMatcher
 from src.triage.sentiment import SentimentAnalyzer
-from src.drafting.guardrails import OutputGuardrail
-from src.triage.engine import TriageEngine
-from src.models import TweetInput, IntentResult, AppleIntentEnum, TriageAction, EscalationReasonCode
-
 
 # ---------------------------------------------------------------------------
 # Negation handling (src/triage/rules.py)
@@ -109,7 +107,7 @@ def test_engine_escalates_prompt_injection_before_any_other_gate():
 
 def test_reporting_a_scam_not_victimized_does_not_escalate():
     analyzer = SentimentAnalyzer()
-    is_frustrated, score, _ = analyzer.is_severe_frustration(
+    is_frustrated, _score, _ = analyzer.is_severe_frustration(
         "Just a heads up, I reported a scam email pretending to be Apple to the FTC today."
     )
     assert is_frustrated is False
@@ -117,7 +115,7 @@ def test_reporting_a_scam_not_victimized_does_not_escalate():
 
 def test_corroborated_fraud_claim_does_escalate():
     analyzer = SentimentAnalyzer()
-    is_frustrated, score, markers = analyzer.is_severe_frustration(
+    is_frustrated, _score, _markers = analyzer.is_severe_frustration(
         "Apple scammed me and stole money from my account, this is fraud!!"
     )
     assert is_frustrated is True
@@ -125,7 +123,7 @@ def test_corroborated_fraud_claim_does_escalate():
 
 def test_genuine_account_compromise_always_escalates():
     analyzer = SentimentAnalyzer()
-    is_frustrated, score, markers = analyzer.is_severe_frustration(
+    is_frustrated, _score, markers = analyzer.is_severe_frustration(
         "My account was hacked and I can't log back in."
     )
     assert is_frustrated is True
@@ -190,7 +188,7 @@ def test_ungrounded_draft_fails_grounding_check():
 
 def test_grounded_draft_passes_grounding_check():
     guardrail = OutputGuardrail()
-    ok, overlap = guardrail.check_grounding(
+    ok, _overlap = guardrail.check_grounding(
         draft="Please try a force restart of your device to fix the issue.",
         retrieved_snippets=["Try a force restart: hold the side button to restart the device."],
     )

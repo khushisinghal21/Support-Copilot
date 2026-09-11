@@ -10,11 +10,11 @@ deterministically, covering: a real/specific page (verified), a dead link
 failure (inconclusive, not treated as broken).
 """
 
-from unittest.mock import patch, MagicMock
 import urllib.error
+from unittest.mock import MagicMock, patch
 
-from src.drafting.link_checker import extract_urls, verify_url, LinkCheckResult
 from src.drafting.guardrails import OutputGuardrail
+from src.drafting.link_checker import extract_urls, verify_url
 
 
 def _fake_response(status=200, geturl="https://support.apple.com/kb/HT201264"):

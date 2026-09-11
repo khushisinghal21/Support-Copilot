@@ -1,12 +1,10 @@
 """Baseline intent classifiers for benchmark comparison (Deliverable 4)."""
 
-from typing import Dict, List, Optional
-import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 
-from src.models import AppleIntentEnum, IntentResult
 from src.intent.taxonomy import INTENT_PROTOTYPES
+from src.models import AppleIntentEnum, IntentResult
 
 
 class TrivialMajorityClassifier:
@@ -31,7 +29,7 @@ class SimpleTfidfClassifier:
     def __init__(self):
         self.vectorizer = TfidfVectorizer(ngram_range=(1, 2), max_features=1500)
         self.model = LogisticRegression(max_iter=500, random_state=42)
-        self.classes: List[str] = [e.value for e in AppleIntentEnum]
+        self.classes: list[str] = [e.value for e in AppleIntentEnum]
         self._is_fitted = False
         self._fit_default_corpus()
 
@@ -48,7 +46,7 @@ class SimpleTfidfClassifier:
         self.model.fit(X, labels)
         self._is_fitted = True
 
-    def fit(self, texts: List[str], labels: List[str]):
+    def fit(self, texts: list[str], labels: list[str]):
         """Fits on custom labeled dataset."""
         X = self.vectorizer.fit_transform(texts)
         self.model.fit(X, labels)
@@ -61,7 +59,7 @@ class SimpleTfidfClassifier:
 
         X = self.vectorizer.transform([text])
         probs = self.model.predict_proba(X)[0]
-        class_probs = {cls_name: float(p) for cls_name, p in zip(self.model.classes_, probs)}
+        class_probs = {cls_name: float(p) for cls_name, p in zip(self.model.classes_, probs, strict=False)}
 
         # Sort by probability
         sorted_intents = sorted(class_probs.items(), key=lambda item: item[1], reverse=True)

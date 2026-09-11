@@ -15,8 +15,9 @@ now checks the installed SDK's actual schema and returns None rather than
 crashing when neither field is available for a (model, SDK) combination.
 """
 
-import src.llm_utils as llm_utils
 from google.genai import types
+
+import src.llm_utils as llm_utils
 from src.llm_utils import build_thinking_config
 
 

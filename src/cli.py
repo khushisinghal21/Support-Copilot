@@ -5,17 +5,23 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from src.models import TweetInput, TriageAction
-from src.pipeline import SupportPipeline
 from src.config import (
-    TARGET_BRAND,
+    FRUSTRATION_THRESHOLD,
     MIN_INTENT_CONFIDENCE,
     MIN_RETRIEVAL_SIMILARITY,
-    FRUSTRATION_THRESHOLD,
+    TARGET_BRAND,
 )
+from src.logging_config import setup_logging
+from src.models import TriageAction, TweetInput
+from src.pipeline import SupportPipeline
 
 app = typer.Typer(help="Hiver AI Support & Triage Agent CLI")
 console = Console()
+
+# Diagnostics go to logging; everything the user is meant to read goes to the
+# rich console below. Deliberately separate -- routing CLI output through logging
+# would mean a user sees nothing unless they also set LOG_LEVEL.
+setup_logging()
 
 
 @app.command()
@@ -39,11 +45,11 @@ def process(
     table.add_row("Tweet ID", response.tweet_id)
     table.add_row("Input Text", text)
     table.add_row("Classified Intent", f"[bold yellow]{response.intent.primary_intent.value}[/bold yellow] (conf: {response.intent.confidence:.2f})")
-    
+
     action_color = "green" if response.triage.action == TriageAction.AUTO_HANDLE else "bold red"
     table.add_row("Triage Action", f"[{action_color}]{response.triage.action.value}[/{action_color}]")
     table.add_row("Stated Reason", response.triage.stated_reason)
-    
+
     if response.drafted_reply:
         table.add_row("Drafted Reply", f"[italic green]\"{response.drafted_reply}\"[/italic green]")
     else:

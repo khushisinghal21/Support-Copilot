@@ -1,13 +1,14 @@
 """Unit tests for Triage & Escalation Decision Engine."""
 
 import pytest
+
 from src.models import (
-    TweetInput,
+    AppleIntentEnum,
+    EscalationReasonCode,
     IntentResult,
     RetrievalResult,
     TriageAction,
-    EscalationReasonCode,
-    AppleIntentEnum,
+    TweetInput,
 )
 from src.triage.engine import TriageEngine
 

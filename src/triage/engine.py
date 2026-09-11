@@ -30,20 +30,20 @@ first; the code did not match the diagram. Gate order and every reason code are
 preserved exactly as they were.
 """
 
-from typing import List, Optional
+
+from src.config import MIN_INTENT_CONFIDENCE, MIN_RETRIEVAL_SIMILARITY
 from src.models import (
-    TweetInput,
+    AppleIntentEnum,
+    EscalationReasonCode,
     IntentResult,
     RetrievalResult,
-    TriageDecision,
     TriageAction,
-    EscalationReasonCode,
-    AppleIntentEnum,
+    TriageDecision,
+    TweetInput,
 )
-from src.config import MIN_INTENT_CONFIDENCE, MIN_RETRIEVAL_SIMILARITY
+from src.triage.reasons import format_stated_reason
 from src.triage.rules import RuleMatcher
 from src.triage.sentiment import SentimentAnalyzer
-from src.triage.reasons import format_stated_reason
 
 # Intents where the correct advice genuinely depends on which device is
 # involved (a Bluetooth dropout means different steps on iPhone vs Apple
@@ -67,7 +67,7 @@ _GUARDRAIL_REASON_MAP = [
 ]
 
 
-def _map_guardrail_reason(violations: List[str]) -> EscalationReasonCode:
+def _map_guardrail_reason(violations: list[str]) -> EscalationReasonCode:
     for prefix, code in _GUARDRAIL_REASON_MAP:
         if any(v.startswith(prefix) for v in violations):
             return code
@@ -87,7 +87,7 @@ class TriageEngine:
         self.rule_matcher = RuleMatcher()
         self.sentiment_analyzer = SentimentAnalyzer()
 
-    def evaluate_input(self, tweet: TweetInput) -> Optional[TriageDecision]:
+    def evaluate_input(self, tweet: TweetInput) -> TriageDecision | None:
         """Runs the input-side gates (1-5) on the raw customer text alone.
 
         Returns a TriageDecision when a gate fires -- in which case the caller
@@ -177,10 +177,10 @@ class TriageEngine:
         self,
         tweet: TweetInput,
         intent_res: IntentResult,
-        rag_res: Optional[RetrievalResult] = None,
-        drafted_reply: Optional[str] = None,
+        rag_res: RetrievalResult | None = None,
+        drafted_reply: str | None = None,
         guardrail_passed: bool = True,
-        guardrail_violations: Optional[List[str]] = None,
+        guardrail_violations: list[str] | None = None,
     ) -> TriageDecision:
         """Runs the output-side gates (6, 6b, 7, 8, 9) after drafting.
 
@@ -274,10 +274,10 @@ class TriageEngine:
         self,
         tweet: TweetInput,
         intent_res: IntentResult,
-        rag_res: Optional[RetrievalResult] = None,
-        drafted_reply: Optional[str] = None,
+        rag_res: RetrievalResult | None = None,
+        drafted_reply: str | None = None,
         guardrail_passed: bool = True,
-        guardrail_violations: Optional[List[str]] = None,
+        guardrail_violations: list[str] | None = None,
     ) -> TriageDecision:
         """Full cascade in the original order: input gates, then output gates.
 

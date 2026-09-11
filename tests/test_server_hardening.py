@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 
 from src.models import AppleIntentEnum, IntentResult, SupportResponse, TriageAction, TriageDecision
 
-
 # --------------------------------------------------------------------------
 # Singleton construction
 # --------------------------------------------------------------------------

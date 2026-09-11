@@ -1,31 +1,29 @@
 """Benchmark Runner: Evaluates Baselines vs Proposed Pipeline and generates Deliverables in < 15 mins."""
 
-import json
 import time
-from typing import List, Dict, Any
+
 import numpy as np
 import typer
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+from rich.table import Table
 
-from src.models import TweetInput
-from src.config import REPORT_OUTPUT_PATH, BENCHMARK_SUMMARY_JSON_PATH, TARGET_BRAND
-from src.eval.splits import CALIBRATION, HELDOUT, load_golden_rows, split_counts
-from src.pipeline import SupportPipeline
-from src.intent.baselines import TrivialMajorityClassifier, SimpleTfidfClassifier
-from src.eval.metrics import compute_intent_metrics, compute_triage_metrics, compute_rouge_similarity
-from src.eval.judge import LLMJudge
-from src.eval.human_agreement import compute_human_judge_agreement
-from src.eval.report_generator import generate_markdown_report, write_benchmark_summary_json, _abbreviate_labels
+from src.config import BENCHMARK_SUMMARY_JSON_PATH, REPORT_OUTPUT_PATH, TARGET_BRAND
 from src.eval.failure_analysis import mine_failure_modes
+from src.eval.human_agreement import compute_human_judge_agreement
+from src.eval.judge import LLMJudge
+from src.eval.metrics import compute_intent_metrics, compute_rouge_similarity, compute_triage_metrics
+from src.eval.report_generator import _abbreviate_labels, generate_markdown_report, write_benchmark_summary_json
+from src.eval.splits import CALIBRATION, HELDOUT, load_golden_rows, split_counts
+from src.intent.baselines import SimpleTfidfClassifier, TrivialMajorityClassifier
+from src.models import TweetInput
+from src.pipeline import SupportPipeline
 
 app = typer.Typer(help="Hiver AI Support Agent Evaluation Harness")
 console = Console()
 
 
-def load_golden_dataset(limit: int = None, split: str = None) -> List[Dict]:
+def load_golden_dataset(limit: int | None = None, split: str | None = None) -> list[dict]:
     """Loads the hand-labelled golden dataset from JSONL. `limit` truncates
     to a subset (used by --quick); the full file is used otherwise --
     previously this hardcoded 200 regardless of how many rows the golden
@@ -97,7 +95,7 @@ def run(
             b2_preds_triage.append("ESCALATE")
         else:
             b2_preds_triage.append("AUTO_HANDLE")
-    b2_replies = [f"We can help with your Apple issue. Please check apple.co for troubleshooting." for _ in data]
+    b2_replies = ["We can help with your Apple issue. Please check apple.co for troubleshooting." for _ in data]
 
     b2_intent_metrics = compute_intent_metrics(y_true_intent, b2_preds_intent)
     b2_triage_metrics = compute_triage_metrics(y_true_triage, b2_preds_triage)
@@ -163,7 +161,7 @@ def run(
     def _judge_avg(replies_subset, texts_subset, refs_subset):
         scores = [
             judge.grade_reply(t, rep, ref)["overall"]
-            for t, rep, ref in zip(texts_subset, replies_subset, refs_subset)
+            for t, rep, ref in zip(texts_subset, replies_subset, refs_subset, strict=False)
         ]
         # No fabricated fallback constant: an empty sample means the score
         # is genuinely undefined, not "4.5" or any other plausible-looking
@@ -192,7 +190,7 @@ def run(
     # 5. Extract Top 5 Failure Modes
     # -------------------------------------------------------------
     failures = []
-    for d, r in zip(data, prod_responses):
+    for d, r in zip(data, prod_responses, strict=False):
         if r.intent.primary_intent.value != d["true_intent"] or r.triage.action.value != d["true_triage_action"]:
             failures.append({
                 "tweet_id": d["tweet_id"],
@@ -239,7 +237,10 @@ def run(
         split_info=split_info,
     )
 
-    benchmark_summary = write_benchmark_summary_json(
+    # Return value intentionally unbound: this function's purpose is the file it
+    # writes (docs/benchmark_summary.json). The previous binding was dead -- ruff
+    # F841 caught it.
+    write_benchmark_summary_json(
         trivial_metrics=trivial_results,
         simple_metrics=simple_results,
         prod_metrics=prod_results,

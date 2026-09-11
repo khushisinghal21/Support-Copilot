@@ -20,9 +20,8 @@ the platform's port-scan timeout. Keeping the import inside get_encoder()
 means "import src.embeddings" alone stays cheap.
 """
 
-from typing import Dict
 
-_ENCODER_CACHE: Dict[str, object] = {}
+_ENCODER_CACHE: dict[str, object] = {}
 
 
 def get_encoder(model_name: str):

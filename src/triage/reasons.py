@@ -1,9 +1,9 @@
 """Standardized escalation reason codes and explainable justification strings."""
 
-from typing import Dict, Optional
+
 from src.models import EscalationReasonCode
 
-REASON_EXPLANATIONS: Dict[EscalationReasonCode, str] = {
+REASON_EXPLANATIONS: dict[EscalationReasonCode, str] = {
     EscalationReasonCode.HARDWARE_PHYSICAL_DAMAGE: (
         "Physical damage or battery safety hazard detected (e.g., swelling battery, shattered glass, "
         "liquid immersion, smoke, electric shock). Requires hands-on inspection and reservation at an "
@@ -70,7 +70,7 @@ REASON_EXPLANATIONS: Dict[EscalationReasonCode, str] = {
 }
 
 
-CLARIFYING_QUESTIONS: Dict[EscalationReasonCode, str] = {
+CLARIFYING_QUESTIONS: dict[EscalationReasonCode, str] = {
     EscalationReasonCode.AMBIGUOUS_DEVICE_NEEDS_CLARIFICATION: (
         "Thanks for reaching out! Just to confirm which device this is on "
         "(iPhone, iPad, Mac, or Apple Watch) so we can point you to the right fix?"
@@ -79,13 +79,13 @@ CLARIFYING_QUESTIONS: Dict[EscalationReasonCode, str] = {
 DEFAULT_CLARIFYING_QUESTION = "Thanks for reaching out -- could you share a bit more detail so we can help?"
 
 
-def get_clarifying_question(code: Optional[EscalationReasonCode]) -> str:
+def get_clarifying_question(code: EscalationReasonCode | None) -> str:
     if code is None:
         return DEFAULT_CLARIFYING_QUESTION
     return CLARIFYING_QUESTIONS.get(code, DEFAULT_CLARIFYING_QUESTION)
 
 
-def format_stated_reason(code: EscalationReasonCode, custom_detail: Optional[str] = None) -> str:
+def format_stated_reason(code: EscalationReasonCode, custom_detail: str | None = None) -> str:
     """Returns a structured, human-readable stated explanation for the escalation decision."""
     base_explanation = REASON_EXPLANATIONS.get(code, "Ticket escalated to human specialist.")
     if custom_detail:

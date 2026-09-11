@@ -1,9 +1,10 @@
 """Data contracts and schemas for the Hiver AI Support & Triage Agent."""
 
 from __future__ import annotations
+
 import json
 from enum import Enum
-from typing import Dict, List, Optional
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -51,8 +52,8 @@ class TweetInput(BaseModel):
     tweet_id: str = Field(..., description="Unique tweet snowflake ID")
     text: str = Field(..., min_length=1, description="Raw tweet text")
     author_id: str = Field(..., description="Anonymized or raw author identifier")
-    created_at: Optional[str] = Field(None, description="ISO timestamp of tweet creation")
-    in_reply_to_tweet_id: Optional[str] = Field(None, description="Parent tweet ID if in thread")
+    created_at: str | None = Field(None, description="ISO timestamp of tweet creation")
+    in_reply_to_tweet_id: str | None = Field(None, description="Parent tweet ID if in thread")
 
     @field_validator("text")
     @classmethod
@@ -66,8 +67,8 @@ class IntentResult(BaseModel):
     """Result of intent classification."""
     primary_intent: AppleIntentEnum = Field(..., description="Dominant classified intent")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Calibrated confidence score [0.0, 1.0]")
-    secondary_intents: List[AppleIntentEnum] = Field(default_factory=list, description="Runner-up intents if ambiguous")
-    score_distribution: Dict[str, float] = Field(default_factory=dict, description="Softmax/cosine distribution across classes")
+    secondary_intents: list[AppleIntentEnum] = Field(default_factory=list, description="Runner-up intents if ambiguous")
+    score_distribution: dict[str, float] = Field(default_factory=dict, description="Softmax/cosine distribution across classes")
 
 
 class HistoricalCitation(BaseModel):
@@ -80,9 +81,9 @@ class HistoricalCitation(BaseModel):
 
 class RetrievalResult(BaseModel):
     """Result of semantic retrieval from historical brand resolutions."""
-    snippets: List[str] = Field(default_factory=list)
-    citations: List[HistoricalCitation] = Field(default_factory=list)
-    similarity_scores: List[float] = Field(default_factory=list)
+    snippets: list[str] = Field(default_factory=list)
+    citations: list[HistoricalCitation] = Field(default_factory=list)
+    similarity_scores: list[float] = Field(default_factory=list)
     max_similarity: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
@@ -90,9 +91,9 @@ class TriageDecision(BaseModel):
     """Decision whether to auto-handle or escalate with a stated reason."""
     action: TriageAction = Field(..., description="AUTO_HANDLE or ESCALATE")
     stated_reason: str = Field(..., min_length=3, description="Explainable reason for decision")
-    reason_code: Optional[EscalationReasonCode] = Field(None, description="Structured enum reason code if escalated")
+    reason_code: EscalationReasonCode | None = Field(None, description="Structured enum reason code if escalated")
     risk_score: float = Field(default=0.0, ge=0.0, le=1.0, description="Aggregated risk score")
-    triggered_rules: List[str] = Field(default_factory=list, description="IDs or descriptions of triggered rules")
+    triggered_rules: list[str] = Field(default_factory=list, description="IDs or descriptions of triggered rules")
 
 
 class SupportResponse(BaseModel):
@@ -100,8 +101,8 @@ class SupportResponse(BaseModel):
     tweet_id: str
     intent: IntentResult
     triage: TriageDecision
-    drafted_reply: Optional[str] = Field(None, description="Proposed response if auto-handled, else None")
-    grounding_context: Optional[RetrievalResult] = Field(None, description="Retrieved historical resolutions")
+    drafted_reply: str | None = Field(None, description="Proposed response if auto-handled, else None")
+    grounding_context: RetrievalResult | None = Field(None, description="Retrieved historical resolutions")
     execution_time_ms: float = Field(default=0.0, description="Latency in milliseconds")
 
     def to_dict(self) -> dict:

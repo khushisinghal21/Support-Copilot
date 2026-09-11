@@ -29,7 +29,6 @@ split would have produced a noisier held-out number on a 188-row set.
 import json
 import random
 from collections import defaultdict
-from typing import Dict, List, Optional
 
 from src.config import GOLDEN_SET_PATH
 
@@ -43,25 +42,25 @@ HELDOUT = "heldout"
 VALID_SPLITS = (CALIBRATION, HELDOUT)
 
 
-def _stratum_key(row: Dict) -> str:
+def _stratum_key(row: dict) -> str:
     """Rows are stratified on the two attributes that actually matter for a
     threshold sweep: the triage label being predicted, and whether the row is an
     authored/edge case (which behaves very differently from organic traffic)."""
     return f"{row.get('true_triage_action')}|{bool(row.get('is_edge_case'))}"
 
 
-def assign_splits(rows: List[Dict]) -> List[Dict]:
+def assign_splits(rows: list[dict]) -> list[dict]:
     """Returns the rows with a deterministic stratified `split` field added.
 
     Pure function of (row contents, SPLIT_SEED) -- it sorts by tweet_id inside
     each stratum before shuffling so the result does not depend on the order the
     file happened to be written in.
     """
-    buckets: Dict[str, List[Dict]] = defaultdict(list)
+    buckets: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
         buckets[_stratum_key(row)].append(row)
 
-    assignment: Dict[str, str] = {}
+    assignment: dict[str, str] = {}
     for key in sorted(buckets):
         members = sorted(buckets[key], key=lambda r: str(r.get("tweet_id")))
         rng = random.Random(f"{SPLIT_SEED}:{key}")
@@ -77,14 +76,14 @@ def assign_splits(rows: List[Dict]) -> List[Dict]:
     return rows
 
 
-def load_golden_rows(split: Optional[str] = None, limit: Optional[int] = None) -> List[Dict]:
+def load_golden_rows(split: str | None = None, limit: int | None = None) -> list[dict]:
     """Loads golden-set rows, optionally restricted to one split.
 
     Falls back to computing the split in memory if the on-disk file predates
     `scripts/add_golden_split.py` having been run, so an older checkout still
     works -- but the persisted field is the source of truth when present.
     """
-    with open(GOLDEN_SET_PATH, "r", encoding="utf-8") as f:
+    with open(GOLDEN_SET_PATH, encoding="utf-8") as f:
         rows = [json.loads(line) for line in f if line.strip()]
 
     if any("split" not in r for r in rows):
@@ -98,10 +97,10 @@ def load_golden_rows(split: Optional[str] = None, limit: Optional[int] = None) -
     return rows[:limit] if limit else rows
 
 
-def split_counts(rows: Optional[List[Dict]] = None) -> Dict[str, int]:
+def split_counts(rows: list[dict] | None = None) -> dict[str, int]:
     """{split: n} for the whole golden set, for reporting."""
     rows = rows if rows is not None else load_golden_rows()
-    counts: Dict[str, int] = {s: 0 for s in VALID_SPLITS}
+    counts: dict[str, int] = dict.fromkeys(VALID_SPLITS, 0)
     for r in rows:
         counts[r["split"]] = counts.get(r["split"], 0) + 1
     return counts

@@ -53,9 +53,9 @@ with three safety-motivated additions from the audit:
 
 import logging
 import re
-from typing import List, Optional, Tuple
-from src.config import MAX_TWEET_CHARS, GROUNDING_MODE, MIN_GROUNDING_SIMILARITY
-from src.triage.rules import RuleMatcher, EMAIL_REGEX, PHONE_REGEX
+
+from src.config import GROUNDING_MODE, MAX_TWEET_CHARS, MIN_GROUNDING_SIMILARITY
+from src.triage.rules import EMAIL_REGEX, PHONE_REGEX, RuleMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class OutputGuardrail:
         """Returns True if no sensitive PII solicitation is detected."""
         return not bool(PII_SOLICITATION_PATTERN.search(text))
 
-    def validate_urls(self, text: str) -> Tuple[bool, List[str]]:
+    def validate_urls(self, text: str) -> tuple[bool, list[str]]:
         """Returns True if all included URLs belong to whitelisted Apple domains."""
         urls = URL_EXTRACTOR.findall(text)
         invalid_urls = []
@@ -145,7 +145,7 @@ class OutputGuardrail:
                 invalid_urls.append(url)
         return len(invalid_urls) == 0, invalid_urls
 
-    def check_pii_echo(self, draft: str, source_customer_text: Optional[str]) -> Tuple[bool, List[str]]:
+    def check_pii_echo(self, draft: str, source_customer_text: str | None) -> tuple[bool, list[str]]:
         """Returns (ok, echoed_values) -- False if the draft repeats an email
         or phone number that appeared in the customer's own message."""
         if not source_customer_text:
@@ -159,11 +159,11 @@ class OutputGuardrail:
                 echoed.append(match)
         return len(echoed) == 0, echoed
 
-    def check_unsafe_advice(self, text: str) -> Tuple[bool, List[str]]:
+    def check_unsafe_advice(self, text: str) -> tuple[bool, list[str]]:
         is_unsafe, rules = self.rule_matcher.detect_unsafe_advice(text)
         return not is_unsafe, rules
 
-    def check_grounding_lexical(self, draft: str, retrieved_snippets: Optional[List[str]]) -> Tuple[bool, float]:
+    def check_grounding_lexical(self, draft: str, retrieved_snippets: list[str] | None) -> tuple[bool, float]:
         """Bag-of-content-words overlap. Returns (ok, overlap_ratio).
 
         Kept as the no-model fallback. Its limits are real and documented in this
@@ -182,7 +182,7 @@ class OutputGuardrail:
         overlap = len(draft_words & context_words) / len(draft_words)
         return overlap >= self.min_grounding_overlap, overlap
 
-    def check_grounding_embedding(self, draft: str, retrieved_snippets: Optional[List[str]]) -> Tuple[bool, float]:
+    def check_grounding_embedding(self, draft: str, retrieved_snippets: list[str] | None) -> tuple[bool, float]:
         """Max cosine similarity between the draft and any retrieved snippet.
 
         Uses src/embeddings.py's cached get_encoder(), so this shares the single
@@ -206,7 +206,7 @@ class OutputGuardrail:
 
             encoder = get_encoder(EMBEDDING_MODEL_NAME)
             vectors = encoder.encode(
-                [draft] + list(retrieved_snippets),
+                [draft, *list(retrieved_snippets)],
                 convert_to_numpy=True,
                 normalize_embeddings=True,
             )
@@ -221,7 +221,7 @@ class OutputGuardrail:
             return self.check_grounding_lexical(draft, retrieved_snippets)
         return similarity >= self.min_grounding_similarity, similarity
 
-    def check_grounding(self, draft: str, retrieved_snippets: Optional[List[str]]) -> Tuple[bool, float]:
+    def check_grounding(self, draft: str, retrieved_snippets: list[str] | None) -> tuple[bool, float]:
         """Dispatches to the configured grounding implementation.
 
         Signature and return shape are unchanged, so existing callers and tests
@@ -231,7 +231,7 @@ class OutputGuardrail:
             return self.check_grounding_embedding(draft, retrieved_snippets)
         return self.check_grounding_lexical(draft, retrieved_snippets)
 
-    def check_link_reachability(self, text: str) -> Tuple[bool, List[str]]:
+    def check_link_reachability(self, text: str) -> tuple[bool, list[str]]:
         """Live-fetches any URL(s) in the draft and flags ones that are dead
         or bounce to the bare domain root instead of the specific page they
         claim to be. No-op (always passes) unless verify_links=True -- see
@@ -254,9 +254,9 @@ class OutputGuardrail:
     def evaluate(
         self,
         text: str,
-        source_customer_text: Optional[str] = None,
-        retrieved_snippets: Optional[List[str]] = None,
-    ) -> Tuple[bool, List[str]]:
+        source_customer_text: str | None = None,
+        retrieved_snippets: list[str] | None = None,
+    ) -> tuple[bool, list[str]]:
         """Evaluates all guardrail checks."""
         violations = []
 

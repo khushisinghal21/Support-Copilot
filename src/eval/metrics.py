@@ -1,14 +1,15 @@
 """Automated statistical evaluation metrics for Intent, Triage, and Reply Quality."""
 
-from typing import Dict, List, Any
+from typing import Any
+
 import numpy as np
-from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
 from rouge_score import rouge_scorer
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 
-def compute_intent_metrics(y_true: List[str], y_pred: List[str]) -> Dict[str, Any]:
+def compute_intent_metrics(y_true: list[str], y_pred: list[str]) -> dict[str, Any]:
     """Computes Macro-F1, Accuracy, and per-class metrics for intent classification."""
-    labels = sorted(list(set(y_true) | set(y_pred)))
+    labels = sorted(set(y_true) | set(y_pred))
     report = classification_report(y_true, y_pred, labels=labels, output_dict=True, zero_division=0)
     acc = accuracy_score(y_true, y_pred)
     cm = confusion_matrix(y_true, y_pred, labels=labels).tolist()
@@ -32,7 +33,7 @@ def compute_intent_metrics(y_true: List[str], y_pred: List[str]) -> Dict[str, An
     }
 
 
-def compute_triage_metrics(y_true: List[str], y_pred: List[str]) -> Dict[str, Any]:
+def compute_triage_metrics(y_true: list[str], y_pred: list[str]) -> dict[str, Any]:
     """Computes accuracy, escalation recall/precision, and false handling rates."""
     acc = accuracy_score(y_true, y_pred)
     report = classification_report(y_true, y_pred, output_dict=True, zero_division=0)
@@ -43,8 +44,8 @@ def compute_triage_metrics(y_true: List[str], y_pred: List[str]) -> Dict[str, An
     esc_f1 = report.get("ESCALATE", {}).get("f1-score", 0.0)
 
     # Calculate safety-critical missed escalations: True=ESCALATE, Pred=AUTO_HANDLE
-    missed_escalations = sum(1 for yt, yp in zip(y_true, y_pred) if yt == "ESCALATE" and yp == "AUTO_HANDLE")
-    false_escalations = sum(1 for yt, yp in zip(y_true, y_pred) if yt == "AUTO_HANDLE" and yp == "ESCALATE")
+    missed_escalations = sum(1 for yt, yp in zip(y_true, y_pred, strict=False) if yt == "ESCALATE" and yp == "AUTO_HANDLE")
+    false_escalations = sum(1 for yt, yp in zip(y_true, y_pred, strict=False) if yt == "AUTO_HANDLE" and yp == "ESCALATE")
     total_escalations_true = sum(1 for yt in y_true if yt == "ESCALATE")
 
     missed_rate = (missed_escalations / total_escalations_true) if total_escalations_true > 0 else 0.0
@@ -64,13 +65,13 @@ def compute_triage_metrics(y_true: List[str], y_pred: List[str]) -> Dict[str, An
     }
 
 
-def compute_rouge_similarity(references: List[str], hypotheses: List[str]) -> Dict[str, float]:
+def compute_rouge_similarity(references: list[str], hypotheses: list[str]) -> dict[str, float]:
     """Computes average ROUGE-1 and ROUGE-L scores against reference resolutions."""
     scorer = rouge_scorer.RougeScorer(["rouge1", "rougeL"], use_stemmer=True)
     r1_scores = []
     rl_scores = []
 
-    for ref, hyp in zip(references, hypotheses):
+    for ref, hyp in zip(references, hypotheses, strict=False):
         if not hyp:
             continue
         scores = scorer.score(ref, hyp)

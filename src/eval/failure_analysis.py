@@ -10,7 +10,7 @@ actual counts/examples instead.
 """
 
 from collections import Counter, defaultdict
-from typing import Any, Dict, List
+from typing import Any
 
 # Generic, honest hypothesis/mitigation text per error category. These
 # describe the *type* of failure (data-independent), while the frequency and
@@ -83,7 +83,7 @@ _CATEGORY_INFO = {
 }
 
 
-def _categorize(record: Dict[str, Any]) -> str:
+def _categorize(record: dict[str, Any]) -> str:
     true_intent = record.get("true_intent")
     pred_intent = record.get("pred_intent")
     true_triage = record.get("true_triage")
@@ -100,14 +100,14 @@ def _categorize(record: Dict[str, Any]) -> str:
     return "other"
 
 
-def mine_failure_modes(failures: List[Dict[str, Any]], top_n: int = 5) -> List[Dict[str, Any]]:
+def mine_failure_modes(failures: list[dict[str, Any]], top_n: int = 5) -> list[dict[str, Any]]:
     """Clusters the real per-example failures from an eval run into named
     categories and returns the top `top_n` by frequency, each with one real
     example pulled from the actual run."""
     if not failures:
         return []
 
-    by_category: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for f in failures:
         by_category[_categorize(f)].append(f)
 

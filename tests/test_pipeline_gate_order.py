@@ -12,10 +12,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.models import TweetInput, TriageAction, EscalationReasonCode
+from src.models import EscalationReasonCode, TriageAction, TweetInput
 from src.pipeline import SupportPipeline
 from src.triage.engine import TriageEngine
-
 
 # (text, expected reason code) -- one per input-side gate, in cascade order.
 INPUT_GATED_TWEETS = [
@@ -113,7 +112,7 @@ def test_evaluate_input_returns_none_for_clean_text():
 def test_evaluate_wrapper_preserves_original_behaviour(text, expected_code):
     """evaluate() must still produce exactly what the single-method cascade did,
     so existing callers and tests are unaffected by the split."""
-    from src.models import IntentResult, AppleIntentEnum
+    from src.models import AppleIntentEnum, IntentResult
 
     engine = TriageEngine()
     decision = engine.evaluate(

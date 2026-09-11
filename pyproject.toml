@@ -27,3 +27,91 @@ dependencies = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+# ---------------------------------------------------------------------------
+# Linting and formatting
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 120          # this codebase's existing comment/string style
+target-version = "py311"
+extend-exclude = ["data", "docs"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes -- unused imports/names, the class of bug that
+                # actually bites (the repo had several)
+    "I",        # import sorting
+    "B",        # bugbear -- mutable defaults, except-pass, shadowed builtins
+    "C4",       # comprehension simplifications
+    "UP",       # pyupgrade
+    "RUF",      # ruff's own rules
+]
+ignore = [
+    "E501",     # line length: enforced by the formatter, and several long lines
+                # here are deliberate prose in explanatory comments, which this
+                # codebase treats as load-bearing rather than decoration.
+    "B008",     # function call in argument default: FastAPI's Header()/Depends()
+                # idiom requires exactly this.
+    "UP042",    # `class X(str, Enum)` -> StrEnum. Declined deliberately: the two
+                # differ in what str(member) returns (StrEnum gives the value,
+                # str+Enum gives "X.MEMBER"), and these enums cross a Pydantic
+                # serialisation boundary into an API response and a JSONL audit
+                # log. A cosmetic modernisation is not worth risking a silent
+                # change to on-the-wire values; .value is used explicitly
+                # throughout already.
+    "RUF001",   # "ambiguous" en dashes. They are intentional typography in report
+                # prose, not homoglyph smuggling.
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Scripts legitimately sys.path-insert before importing, so their imports cannot
+# all sit at the top of the file.
+"scripts/*" = ["E402"]
+"tests/*" = ["B011"]
+
+# ---------------------------------------------------------------------------
+# Typing. Strict on the safety-critical core only, for now.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+ignore_missing_imports = true     # chromadb / sentence_transformers / rouge_score
+                                  # ship no stubs
+warn_redundant_casts = true
+warn_unused_ignores = false
+no_implicit_optional = true
+check_untyped_defs = true
+
+# The path to repo-wide strict, recorded rather than left implicit:
+#   1. (done) strict on src/models.py, src/triage/, src/pipeline.py -- the
+#      modules where a type error is a safety bug rather than an inconvenience.
+#   2. next: src/drafting/guardrails.py and src/eval/metrics.py, which are pure
+#      functions over well-defined shapes and should be cheap to annotate.
+#   3. then: src/eval/* and src/server.py.
+#   4. last: src/data/* and the scripts, which are one-shot ETL and where the
+#      return on annotation is lowest.
+# Widening the strict list is the only intended direction; if a module has to
+# come back out, say why here.
+[[tool.mypy.overrides]]
+module = ["src.models", "src.pipeline", "src.triage.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+strict_equality = true
+warn_return_any = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "scripts.*"]
+ignore_errors = true
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["src/data/ingest_kaggle.py", "src/eval/curate_datasets.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

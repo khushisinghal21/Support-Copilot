@@ -1,8 +1,7 @@
 """Comprehensive seed historical resolutions representing authentic @AppleSupport response patterns."""
 
-from typing import List, Dict
 
-HISTORICAL_APPLE_RESOLUTIONS: List[Dict[str, str]] = [
+HISTORICAL_APPLE_RESOLUTIONS: list[dict[str, str]] = [
     # OS & Software Troubleshooting
     {
         "tweet_id": "hist_os_001",

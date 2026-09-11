@@ -1,10 +1,12 @@
 """Unit tests for Intent Classification Engine and Baselines."""
 
 import time
+
 import pytest
-from src.models import AppleIntentEnum
-from src.intent.baselines import TrivialMajorityClassifier, SimpleTfidfClassifier
+
+from src.intent.baselines import SimpleTfidfClassifier, TrivialMajorityClassifier
 from src.intent.classifier import SemanticCentroidClassifier
+from src.models import AppleIntentEnum
 
 
 @pytest.fixture(scope="module")

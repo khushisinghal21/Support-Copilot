@@ -1,11 +1,12 @@
 """Unit tests for src/pipeline.py."""
 
 from unittest.mock import MagicMock
+
 from src.models import (
-    TweetInput,
-    TriageAction,
-    EscalationReasonCode,
     AppleIntentEnum,
+    EscalationReasonCode,
+    TriageAction,
+    TweetInput,
 )
 from src.pipeline import SupportPipeline
 

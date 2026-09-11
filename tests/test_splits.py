@@ -14,7 +14,7 @@ from src.eval import splits
 
 
 def _rows():
-    with open(GOLDEN_SET_PATH, "r", encoding="utf-8") as f:
+    with open(GOLDEN_SET_PATH, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
 

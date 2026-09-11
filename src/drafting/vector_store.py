@@ -2,10 +2,16 @@
 
 import json
 import logging
-from typing import List, Dict, Optional
-from src.config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL_NAME, KAGGLE_PAIRS_PATH, GOLDEN_SET_PATH, RAG_CORPUS_MAX_RECORDS
-from src.drafting.historical_data import HISTORICAL_APPLE_RESOLUTIONS
+
+from src.config import (
+    CHROMA_PERSIST_DIR,
+    EMBEDDING_MODEL_NAME,
+    GOLDEN_SET_PATH,
+    KAGGLE_PAIRS_PATH,
+    RAG_CORPUS_MAX_RECORDS,
+)
 from src.data.heuristic_intent import heuristic_intent
+from src.drafting.historical_data import HISTORICAL_APPLE_RESOLUTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +39,7 @@ def _golden_set_source_ids() -> set:
     return ids
 
 
-def load_real_corpus(max_records: int = RAG_CORPUS_MAX_RECORDS) -> List[Dict[str, str]]:
+def load_real_corpus(max_records: int = RAG_CORPUS_MAX_RECORDS) -> list[dict[str, str]]:
     """Loads the real Kaggle-extracted @AppleSupport pairs for RAG indexing,
     excluding anything used in the golden evaluation set (leakage guard) and
     re-tagging intent with the independent heuristic rather than trusting the
@@ -41,7 +47,7 @@ def load_real_corpus(max_records: int = RAG_CORPUS_MAX_RECORDS) -> List[Dict[str
     if not KAGGLE_PAIRS_PATH.exists():
         return []
     excluded = _golden_set_source_ids()
-    records: List[Dict[str, str]] = []
+    records: list[dict[str, str]] = []
     with open(KAGGLE_PAIRS_PATH, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -64,7 +70,7 @@ def load_real_corpus(max_records: int = RAG_CORPUS_MAX_RECORDS) -> List[Dict[str
 class HistoricalVectorStore:
     """Manages the embedded ChromaDB vector collection for customer support RAG."""
 
-    def __init__(self, persist_dir: Optional[str] = None, collection_name: str = "apple_support_resolutions"):
+    def __init__(self, persist_dir: str | None = None, collection_name: str = "apple_support_resolutions"):
         # chromadb is imported here, not at module level. A module-level
         # import would make every "import src.server" (which imports this
         # module transitively) pay the full cost of importing
@@ -79,6 +85,7 @@ class HistoricalVectorStore:
         # redundant copy -- that duplication was a contributor to an
         # out-of-memory crash on Render's 512MB free tier.
         import chromadb
+
         from src.embeddings import get_encoder
 
         self.persist_dir = str(persist_dir or CHROMA_PERSIST_DIR)
@@ -110,7 +117,7 @@ class HistoricalVectorStore:
                             "for real grounding.")
             self.index_records(HISTORICAL_APPLE_RESOLUTIONS)
 
-    def index_records(self, records: List[Dict[str, str]]):
+    def index_records(self, records: list[dict[str, str]]):
         """Indexes a list of resolution records into ChromaDB."""
         ids = []
         documents = []
@@ -120,7 +127,7 @@ class HistoricalVectorStore:
         texts_to_embed = [r["customer_text"] for r in records]
         encoded_vecs = self.encoder.encode(texts_to_embed, convert_to_numpy=True, normalize_embeddings=True)
 
-        for record, vec in zip(records, encoded_vecs):
+        for record, vec in zip(records, encoded_vecs, strict=False):
             ids.append(record["tweet_id"])
             documents.append(record["customer_text"])
             metadatas.append({
@@ -136,7 +143,7 @@ class HistoricalVectorStore:
             embeddings=embeddings,
         )
 
-    def query(self, query_text: str, intent: Optional[str] = None, top_k: int = 3) -> Dict:
+    def query(self, query_text: str, intent: str | None = None, top_k: int = 3) -> dict:
         """Queries the collection for semantically similar historical customer tweets."""
         query_vec = self.encoder.encode([query_text], convert_to_numpy=True, normalize_embeddings=True)[0].tolist()
 

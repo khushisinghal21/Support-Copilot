@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from typing import Dict, Optional
+
 from src.config import GEMINI_API_KEY, GEMINI_MODEL_NAME
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ class LLMJudge:
                 logger.warning(f"Failed to initialize Gemini judge client: {e}. Using deterministic fallback judge.")
                 self._llm = None
 
-    def grade_reply(self, customer_query: str, drafted_reply: Optional[str], reference_reply: str) -> Dict:
+    def grade_reply(self, customer_query: str, drafted_reply: str | None, reference_reply: str) -> dict:
         """Grades a drafted response and returns scores for groundedness, tone, and safety."""
         # 1. Escalated ticket (no automated reply emitted)
         if not drafted_reply:
@@ -74,6 +74,7 @@ class LLMJudge:
         if self._llm:
             try:
                 from google.genai import types
+
                 from src.llm_utils import build_thinking_config
 
                 prompt = (
