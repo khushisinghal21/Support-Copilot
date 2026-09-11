@@ -61,5 +61,13 @@ def build_thinking_config(model_name: str) -> Optional["types.ThinkingConfig"]:
     if wants_budget and "thinking_budget" in _THINKING_CONFIG_FIELDS:
         return types.ThinkingConfig(thinking_budget=0)
     if not wants_budget and "thinking_level" in _THINKING_CONFIG_FIELDS:
-        return types.ThinkingConfig(thinking_level="minimal")
+        # Pass the enum member when this SDK exposes it, rather than relying on
+        # pydantic to coerce the string. Verified that the string form DOES still
+        # coerce correctly ("minimal" -> ThinkingLevel.MINIMAL), so this is not a
+        # bug fix -- it is removing a dependency on coercion that mypy could not
+        # see through and a future SDK could tighten. getattr, because an older
+        # release can have the field without exporting the enum.
+        level_enum = getattr(types, "ThinkingLevel", None)
+        level = getattr(level_enum, "MINIMAL", "minimal") if level_enum else "minimal"
+        return types.ThinkingConfig(thinking_level=level)
     return None

@@ -1,6 +1,7 @@
 """Grounded Reply Generator using RAG context, LLM, and safety guardrails."""
 
 import logging
+from typing import Any
 
 from src.config import ENABLE_LIVE_LINK_CHECK, GEMINI_API_KEY, GEMINI_MODEL_NAME, LLM_PROVIDER
 from src.drafting.guardrails import OutputGuardrail
@@ -29,7 +30,7 @@ class GroundedReplyGenerator:
         # (dashboard/CLI/API) -- leave it off for bulk eval runs, since that
         # would mean one live HTTP call per golden-set row.
         self.guardrail = OutputGuardrail(verify_links=ENABLE_LIVE_LINK_CHECK)
-        self._llm = None
+        self._llm: Any | None = None
         self._init_llm()
 
     def _init_llm(self):

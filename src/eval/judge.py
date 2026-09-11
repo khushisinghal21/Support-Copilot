@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from typing import Any
 
 from src.config import GEMINI_API_KEY, GEMINI_MODEL_NAME
 
@@ -30,7 +31,7 @@ class LLMJudge:
     def __init__(self, api_key: str = GEMINI_API_KEY, model_name: str = GEMINI_MODEL_NAME):
         self.api_key = api_key
         self.model_name = model_name
-        self._llm = None
+        self._llm: Any | None = None
         self._init_llm()
 
     def _init_llm(self):

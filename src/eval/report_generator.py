@@ -106,9 +106,17 @@ def generate_markdown_report(
     # real split_info handed in by the runner. When a caller does not supply it
     # (older callers, unit tests), say so plainly rather than printing a
     # confident-sounding sentence about a split this run did not actually use.
-    if split_info:
-        _cal_ia = split_info.get("calibration_intent_accuracy")
-        _cal_ta = split_info.get("calibration_triage_accuracy")
+    # Require the keys this branch actually formats, not merely a truthy dict.
+    # mypy caught a genuine latent crash here: `.get()` returns None for a
+    # partial split_info (an older cached summary, a caller that filled in only
+    # some fields), and `None * 100` raises TypeError -- which would abort report
+    # generation AFTER a complete eval run had already been paid for. Falling
+    # back to the "no split information" wording is the correct degradation:
+    # the run is still reported, just without a gap it cannot substantiate.
+    _required_split_keys = ("calibration_intent_accuracy", "calibration_triage_accuracy")
+    if split_info and all(split_info.get(k) is not None for k in _required_split_keys):
+        _cal_ia = split_info["calibration_intent_accuracy"]
+        _cal_ta = split_info["calibration_triage_accuracy"]
         _held_ia = prod_metrics["intent"]["accuracy"]
         _held_ta = prod_metrics["triage"]["accuracy"]
         _clarify_held = split_info.get("heldout_label_counts", {}).get("CLARIFY", 0)

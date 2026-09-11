@@ -48,7 +48,7 @@ def heuristic_intent(text: str) -> str:
     independent of any embedding model. Falls back to OUT_OF_SCOPE_AMBIGUOUS
     when nothing matches."""
     t = text.lower()
-    scores = Counter()
+    scores: Counter[str] = Counter()
     for intent, kws in INTENT_KEYWORDS.items():
         for kw in kws:
             if kw in t:

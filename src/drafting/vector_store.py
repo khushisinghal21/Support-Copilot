@@ -21,7 +21,7 @@ def _golden_set_source_ids() -> set:
     eval set, so the RAG corpus can exclude them and avoid retrieval leakage
     (the eval set would otherwise be able to retrieve, near-verbatim, the
     exact real reply it's being scored against)."""
-    ids = set()
+    ids: set[str] = set()
     if not GOLDEN_SET_PATH.exists():
         return ids
     with open(GOLDEN_SET_PATH, encoding="utf-8") as f:
@@ -143,10 +143,12 @@ class HistoricalVectorStore:
             )
             embeddings.append(vec.tolist())
 
+        # chromadb's Mapping-based metadata type is narrower than the dicts it
+        # actually accepts at runtime; this call is exercised by the test suite.
         self.collection.upsert(
             ids=ids,
             documents=documents,
-            metadatas=metadatas,
+            metadatas=metadatas,  # type: ignore[arg-type]
             embeddings=embeddings,
         )
 
@@ -156,10 +158,13 @@ class HistoricalVectorStore:
 
         where_filter = {"intent": intent} if intent and intent != "OUT_OF_SCOPE_AMBIGUOUS" else None
 
+        # chromadb's stubs declare narrower Mapping/Where types than the plain
+        # dicts it accepts and returns at runtime; both calls are exercised by
+        # the test suite and by every eval run.
         results = self.collection.query(
             query_embeddings=[query_vec],
             n_results=top_k,
-            where=where_filter,
+            where=where_filter,  # type: ignore[arg-type]
             include=["documents", "metadatas", "distances"],
         )
-        return results
+        return results  # type: ignore[return-value]

@@ -76,6 +76,10 @@ ignore = [
 # ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.11"
+# Without this plugin mypy does not understand Pydantic field defaults and
+# reports "Missing named argument" for every optional field on every model
+# construction -- 6 false positives on TweetInput alone.
+plugins = ["pydantic.mypy"]
 warn_unused_configs = true
 ignore_missing_imports = true     # chromadb / sentence_transformers / rouge_score
                                   # ship no stubs
