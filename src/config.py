@@ -108,6 +108,24 @@ GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 # env var / .env file -- nothing else in the code assumes a specific model.
 GEMINI_MODEL_NAME: str = os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash")
 
+# Grounding check implementation for drafted replies
+# (src/drafting/guardrails.py). "embedding" compares the draft to the retrieved
+# historical snippets with the already-cached all-MiniLM-L6-v2 encoder;
+# "lexical" is the original bag-of-words overlap ratio, kept because it is the
+# only thing that works with no model present (CI, offline runs).
+#
+# docs/DECISION_LOG.md #14 records that the lexical check was a fallback from
+# when the embedding model could not reliably be loaded here -- it now can, so
+# the default moves to the measure that can tell paraphrase from vocabulary
+# recycling. The embedding path degrades to lexical automatically if no encoder
+# can be built, so setting this to "embedding" cannot cause an outage.
+#
+# MIN_GROUNDING_SIMILARITY is a cosine floor on a different scale from the
+# lexical MIN overlap ratio (0.12) and is not comparable to it; see
+# docs/REPORT.md for the measured comparison of what each one catches.
+GROUNDING_MODE: str = os.getenv("GROUNDING_MODE", "embedding")
+MIN_GROUNDING_SIMILARITY: float = float(os.getenv("MIN_GROUNDING_SIMILARITY", "0.30"))
+
 # -------------------------------------------------------------------------
 # Web server hardening (src/server.py). All three default to "behave exactly
 # as before", so a local `./run.sh` is unaffected by their existence.

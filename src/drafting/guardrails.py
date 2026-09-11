@@ -17,12 +17,30 @@ with three safety-motivated additions from the audit:
     opening the device casing) regardless of whether they came from an LLM
     or a retrieved historical snippet.
   - Grounding: when historical snippets were actually retrieved, a generated
-    reply with near-zero lexical overlap with them is more likely
-    hallucinated than grounded, and should be treated as a guardrail failure
-    rather than silently shipped. Skipped when nothing was retrieved (the
-    retrieval-similarity gate in the triage engine already handles that case)
-    and skipped when the draft IS one of the retrieved snippets verbatim (the
-    no-LLM fallback path, which is grounded by construction).
+    reply with near-zero overlap with them is more likely hallucinated than
+    grounded, and should be treated as a guardrail failure rather than silently
+    shipped. Skipped when nothing was retrieved (the retrieval-similarity gate in
+    the triage engine already handles that case) and skipped when the draft IS
+    one of the retrieved snippets verbatim (the no-LLM fallback path, which is
+    grounded by construction).
+
+    Two implementations, and which one runs matters:
+
+      * EMBEDDING (default when the encoder is available): cosine similarity
+        between the draft and the retrieved snippets using the same cached
+        all-MiniLM-L6-v2 encoder the rest of the system already holds in memory
+        (src/embeddings.py's get_encoder -- no second model load).
+      * LEXICAL (fallback): bag-of-content-words overlap ratio.
+
+    The lexical check was never the intended design. docs/DECISION_LOG.md #14 is
+    explicit that it was a fallback from when the embedding model could not
+    reliably be loaded in the development environment. Its two failure modes are
+    structural, not tunable: a fluent hallucination that recycles retrieved
+    vocabulary passes, and a correct paraphrase that uses different words fails.
+    Word overlap cannot distinguish meaning from vocabulary; embeddings at least
+    attempt to. The lexical path is retained deliberately -- it is the only thing
+    that works with no model present, which is the state CI and the offline test
+    suite run in -- and is selected explicitly rather than by accident.
   - Link reachability (opt-in, see check_link_reachability): the URL
     whitelist above only proves a link's DOMAIN is official Apple -- it
     can't tell a real page from a fabricated one on that domain. A manually
@@ -36,7 +54,7 @@ with three safety-motivated additions from the audit:
 import logging
 import re
 from typing import List, Optional, Tuple
-from src.config import MAX_TWEET_CHARS
+from src.config import MAX_TWEET_CHARS, GROUNDING_MODE, MIN_GROUNDING_SIMILARITY
 from src.triage.rules import RuleMatcher, EMAIL_REGEX, PHONE_REGEX
 
 logger = logging.getLogger(__name__)
@@ -77,12 +95,20 @@ class OutputGuardrail:
         min_grounding_overlap: float = 0.12,
         verify_links: bool = False,
         link_check_timeout: float = 3.0,
+        grounding_mode: str = GROUNDING_MODE,
+        min_grounding_similarity: float = MIN_GROUNDING_SIMILARITY,
     ):
         self.max_chars = max_chars
         self.min_grounding_overlap = min_grounding_overlap
         self.rule_matcher = RuleMatcher()
         self.verify_links = verify_links
         self.link_check_timeout = link_check_timeout
+        if grounding_mode not in ("embedding", "lexical"):
+            raise ValueError(
+                f"grounding_mode must be 'embedding' or 'lexical', got {grounding_mode!r}"
+            )
+        self.grounding_mode = grounding_mode
+        self.min_grounding_similarity = min_grounding_similarity
 
     def check_length(self, text: str) -> bool:
         """Returns True if within Twitter length limit."""
@@ -137,11 +163,12 @@ class OutputGuardrail:
         is_unsafe, rules = self.rule_matcher.detect_unsafe_advice(text)
         return not is_unsafe, rules
 
-    def check_grounding(self, draft: str, retrieved_snippets: Optional[List[str]]) -> Tuple[bool, float]:
-        """Lexical-overlap grounding check. Returns (ok, overlap_ratio).
-        Skipped (returns ok=True) when there's nothing to ground against, or
-        when the draft is verbatim one of the retrieved snippets (the no-LLM
-        fallback path, grounded by construction)."""
+    def check_grounding_lexical(self, draft: str, retrieved_snippets: Optional[List[str]]) -> Tuple[bool, float]:
+        """Bag-of-content-words overlap. Returns (ok, overlap_ratio).
+
+        Kept as the no-model fallback. Its limits are real and documented in this
+        class's docstring: vocabulary recycling passes, paraphrase fails.
+        """
         if not retrieved_snippets:
             return True, 1.0
         if draft.strip() in [s.strip() for s in retrieved_snippets]:
@@ -154,6 +181,55 @@ class OutputGuardrail:
             return True, 1.0
         overlap = len(draft_words & context_words) / len(draft_words)
         return overlap >= self.min_grounding_overlap, overlap
+
+    def check_grounding_embedding(self, draft: str, retrieved_snippets: Optional[List[str]]) -> Tuple[bool, float]:
+        """Max cosine similarity between the draft and any retrieved snippet.
+
+        Uses src/embeddings.py's cached get_encoder(), so this shares the single
+        already-loaded all-MiniLM-L6-v2 instance rather than loading a second
+        copy -- the duplicate-model-load problem that contributed to an OOM on
+        the 512MB deploy target.
+
+        Falls back to the lexical check (rather than failing the draft, or
+        crashing) when no encoder can be constructed, which is the state of CI
+        and the offline test suite.
+        """
+        if not retrieved_snippets:
+            return True, 1.0
+        if draft.strip() in [s.strip() for s in retrieved_snippets]:
+            return True, 1.0
+        try:
+            import numpy as np
+
+            from src.config import EMBEDDING_MODEL_NAME
+            from src.embeddings import get_encoder
+
+            encoder = get_encoder(EMBEDDING_MODEL_NAME)
+            vectors = encoder.encode(
+                [draft] + list(retrieved_snippets),
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+            )
+            draft_vec, snippet_vecs = vectors[0], vectors[1:]
+            similarity = float(np.max(snippet_vecs @ draft_vec))
+        except Exception as e:
+            # No model available (CI, offline, restricted network). Degrading to
+            # the lexical check is the honest behaviour: refusing every draft
+            # would turn a missing optional dependency into a total outage, and
+            # passing every draft would silently disable a safety check.
+            logger.warning(f"Embedding grounding unavailable ({e}); falling back to lexical overlap")
+            return self.check_grounding_lexical(draft, retrieved_snippets)
+        return similarity >= self.min_grounding_similarity, similarity
+
+    def check_grounding(self, draft: str, retrieved_snippets: Optional[List[str]]) -> Tuple[bool, float]:
+        """Dispatches to the configured grounding implementation.
+
+        Signature and return shape are unchanged, so existing callers and tests
+        are unaffected by the embedding check being added behind it.
+        """
+        if self.grounding_mode == "embedding":
+            return self.check_grounding_embedding(draft, retrieved_snippets)
+        return self.check_grounding_lexical(draft, retrieved_snippets)
 
     def check_link_reachability(self, text: str) -> Tuple[bool, List[str]]:
         """Live-fetches any URL(s) in the draft and flags ones that are dead
@@ -208,11 +284,17 @@ class OutputGuardrail:
         if not advice_ok:
             violations.append(f"UNSAFE_ADVICE: Draft contains unsafe DIY instructions: {advice_rules}")
 
-        grounding_ok, overlap = self.check_grounding(text, retrieved_snippets)
+        grounding_ok, grounding_score = self.check_grounding(text, retrieved_snippets)
         if not grounding_ok:
+            _floor = (
+                self.min_grounding_similarity
+                if self.grounding_mode == "embedding"
+                else self.min_grounding_overlap
+            )
+            _measure = "embedding similarity" if self.grounding_mode == "embedding" else "lexical overlap"
             violations.append(
-                f"UNGROUNDED: Draft has only {overlap:.0%} lexical overlap with retrieved "
-                f"historical resolutions (min {self.min_grounding_overlap:.0%})"
+                f"UNGROUNDED: Draft has only {grounding_score:.0%} {_measure} with retrieved "
+                f"historical resolutions (min {_floor:.0%})"
             )
 
         link_ok, link_problems = self.check_link_reachability(text)

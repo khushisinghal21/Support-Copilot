@@ -46,7 +46,7 @@ than being hidden behind a hardcoded "+" prefix.
 | **Missed Escalations (Safety Risk)** | 21 / 21 | 14 / 21 | **2 / 21** | **+12 fewer missed** |
 | **ROUGE-L Grounding Score** | 0.1572 | 0.1465 | **0.4514** | **+0.3049** |
 | **LLM Judge Quality (1-5 Scale)** | 4.3 / 5.0 | 4.0 / 5.0 | **4.1 / 5.0** | **+0.1** |
-| **P95 Latency (CPU)** | < 1 ms (unmeasured estimate) | ~5 ms (unmeasured estimate) | **59.0 ms** | Real-time ready |
+| **P95 Latency (CPU)** | < 1 ms (unmeasured estimate) | ~5 ms (unmeasured estimate) | **57.5 ms** | Real-time ready |
 
 ---
 
@@ -150,6 +150,26 @@ While our **Macro-F1 of 0.6029** and **Triage Accuracy of 62.9%** may look stron
 5. **Until This Run, The Thresholds Were Tuned On The Evaluation Set**:
    `scripts/calibrate_thresholds.py` swept `MIN_INTENT_CONFIDENCE` and `MIN_RETRIEVAL_SIMILARITY` against the golden set, and this harness then reported headline numbers on *those same rows* -- with no train/test separation anywhere in the repo. `docs/AUDIT_AND_FIX_PLAN.md` §7.10 records that sweep being run and both thresholds being changed on the strength of it (`MIN_RETRIEVAL_SIMILARITY` 0.40 → 0.20, `MIN_INTENT_CONFIDENCE` 0.35 → 0.40). Every triage number published before this run was therefore optimistically biased by construction, and none of the four caveats above disclosed it.
    **What changed:** `data/golden_eval_set.jsonl` now carries a persisted, seeded (`SPLIT_SEED=20260911`), stratified `split` field. The sweep script reads the **64 calibration rows** only; every headline number in this report is measured on the **124 held-out rows** the thresholds were never tuned against. The gap is published rather than hidden: intent accuracy 57.8% → 63.7% (+5.9 pts) and triage accuracy 68.8% → 62.9% (-5.8 pts) moving from tuned-on data to held-out data. **A second limitation the split exposed, stated rather than smoothed over:** the golden set contains exactly one `CLARIFY` row, so stratification could not place it on both sides -- the held-out set has **zero** `CLARIFY` examples. Held-out triage accuracy therefore measures a two-class problem while the system implements three actions, and the `CLARIFY` path is currently covered by unit tests only, not by this benchmark. Fixing that needs more `CLARIFY` data, not a different split.
+
+---
+
+## 5b. Grounding Check: Lexical vs Embedding (Measured, Not Assumed)
+
+`docs/DECISION_LOG.md` #14 recorded that the grounding guardrail's bag-of-words overlap check was a fallback from when the embedding model could not be loaded in the development environment. It can be now, so both were implemented and measured against each other rather than the newer one simply being assumed better.
+
+**Method.** Two populations. (a) Seven hand-authored probe drafts against one retrieved snippet, labelled by whether the snippet actually *supports* the draft's claim. (b) All 188 golden-set reference replies -- real historical `@AppleSupport` agent replies -- each scored against what the retriever returns for its own row. Population (b) is grounded by construction, so anything a check flags there is a false positive.
+
+| Check | Probe verdicts correct | False-positive rate on 188 real agent replies |
+| :--- | :---: | :---: |
+| Lexical overlap, floor 0.12 | 5 / 7 | **18.6%** |
+| Embedding cosine, floor 0.30 | 5 / 7 | **9.6%** |
+| Embedding cosine, floor 0.65 | 7 / 7 | **33.0%** |
+
+**What was chosen and why.** Embedding similarity at a 0.30 floor, which halves the false-positive rate on genuine replies (9.6% vs 18.6%) at identical probe accuracy. Equal probe scores hide that the two checks fail on *different* cases: the lexical check returns a grounding score of **1.00** for the truncated fragment `"We'd like to"` (its no-content-words branch short-circuits to "fine"), while the embedding check scores that ~0.00; conversely the lexical check catches a draft recommending a full OS reinstall against a "force restart" snippet, which the embedding check passes.
+
+**The 7/7 row is a trap, and is listed to show why it was rejected.** A 0.65 floor scores perfectly on the seven probes -- but those probes were hand-written, and fitting a threshold to them is the same error as tuning thresholds on the evaluation set (item 5 above). Measured against real replies, that floor would wrongly escalate a third of genuine historical answers. A 3.4x increase in false escalations to close one class of catch is not a trade worth making.
+
+**Known limitation, stated plainly.** Similarity is not entailment. At the chosen floor, a draft giving *different but topically related* advice than the retrieved snippet still passes (0.64), and so does one that recycles the snippet's vocabulary into an invented claim (0.42). Neither check detects unsupported-but-on-topic assertions, because neither is a model of support. The honest fix is a natural-language-inference model scoring whether the snippet entails the draft; that is a larger change than this pass, and is not pretended to be solved here. `tests/test_grounding_modes.py` asserts the blind spot explicitly so it cannot close or widen unnoticed.
 
 ---
 
