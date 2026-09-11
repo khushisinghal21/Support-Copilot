@@ -40,9 +40,24 @@ preserved byte-for-byte:
 short-circuits on a hit: no retrieval, no generator call, `drafted_reply=None`,
 `grounding_context=None`.
 
-**Verification.** A test asserts the generator is **never invoked** for an input-gated tweet
-(spy/mock on `reply_generator.generate`, asserted `call_count == 0`), plus one test per input
-gate proving the short-circuit, plus the full existing suite staying green.
+**Verification (measured, not estimated).**
+
+* 103 tests pass — the 91 pre-existing ones unchanged, plus 12 new.
+* A parametrised test per input gate asserts both `generator.generate.call_count == 0` and
+  `retriever.retrieve.call_count == 0`, so a future reorder fails CI rather than silently
+  reintroducing the defect.
+* Eval metrics after the split are identical to `docs/baselines/before.txt` (intent 61.7%,
+  triage 64.9%, escalation recall 93.8%, 2/32 missed, kappa 0.0716). That identity is the
+  evidence the refactor is behaviour-preserving: the split changed *when* gates run, not *what*
+  they decide.
+* **29 of 188 golden rows (15.4%)** now skip retrieval and generation entirely.
+
+  *Correction:* commit `69d5e42`'s message states "46 of 188 rows (24.5%)" for this figure. That
+  number was written into the message before the measurement had actually printed, and it is
+  wrong. The measured value is 29 / 188 (15.4%), produced by running `evaluate_input()` over
+  every golden row. The commit message is left as-is rather than rewritten, and corrected here,
+  because this file is the authoritative record and because a repo whose whole ethos is honest
+  reporting should show a corrected mistake rather than a tidied-up history.
 
 **Deliberate non-change (noted, not done).** Gate 6 (intent-confidence floor) only needs
 `intent_res` and could also move input-side for additional savings on low-confidence tickets.
