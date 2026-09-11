@@ -5,3 +5,13 @@ __pycache__/
 .DS_Store
 .env
 *.egg-info/
+
+# Built vector index and runtime audit output. Both are regenerated on demand --
+# data/chroma_db by HistoricalVectorStore._ensure_seed_data() (and the directory
+# by src/config.py's mkdir), data/decision_log.jsonl by the pipeline's audit
+# writer. They were tracked until the hardening pass, which meant every eval run
+# produced a dirty working tree and a diff of binary index pages. History is
+# deliberately NOT rewritten: the files leave the index going forward, the old
+# commits keep them.
+data/chroma_db/
+data/decision_log.jsonl
