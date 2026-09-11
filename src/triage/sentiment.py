@@ -36,6 +36,35 @@ ACCOUNT_COMPROMISE_KEYWORDS = [
     "unauthorized access",
     "unauthorized",
     "identity theft",
+    # Added after a red-team pass. Gate 5 detected the VOCABULARY of compromise
+    # but not the EVENT: "Someone logged into my Apple ID from another country,
+    # changed my password and is buying gift cards with my card" scored 0.00 and
+    # was auto-answered with a link, because it contains none of the words above.
+    # These describe what a takeover actually looks like when a customer reports
+    # it in their own words.
+    "someone logged into",
+    "someone else logged in",
+    "logged in from another country",
+    # NOT a bare "changed my password" -- that fires on the benign "I changed my
+    # password and now sync works fine". A takeover report names someone else
+    # doing it, or says it happened TO them.
+    "someone changed my password",
+    "they changed my password",
+    "password was changed",
+    "password has been changed",
+    "changed my password without",
+    "locked me out of my",
+    "took over my",
+    "has full control of my",
+    "ported my number",
+    "sim swap",
+    "signed in from a device i don",
+    "i didn't authorize",
+    "i didnt authorize",
+    "i did not authorize",
+    "not my purchase",
+    "didn't make this purchase",
+    "didnt make this purchase",
 ]
 
 # Tier 1: legal/regulatory language that's rarely used in jest.

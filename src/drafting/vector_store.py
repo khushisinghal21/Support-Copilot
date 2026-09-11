@@ -16,14 +16,69 @@ from src.drafting.historical_data import HISTORICAL_APPLE_RESOLUTIONS
 logger = logging.getLogger(__name__)
 
 
-def _golden_set_source_ids() -> set:
-    """Returns the set of original kaggle source_tweet_ids used in the golden
-    eval set, so the RAG corpus can exclude them and avoid retrieval leakage
-    (the eval set would otherwise be able to retrieve, near-verbatim, the
-    exact real reply it's being scored against)."""
+def _id_variants(raw: str) -> set[str]:
+    """Every corpus id a golden `source_tweet_id` could be referring to.
+
+    WHY THIS IS NOT JUST {raw}
+    ---------------------------
+    `scripts/finalize_golden_set.py` built each golden row's `tweet_id` as
+    f"kaggle_{item['source_tweet_id']}" where `source_tweet_id` ALREADY carried
+    that prefix, then copied the result back into `source_tweet_id` (lines 121,
+    163, 195). So golden rows carry doubled ids like
+
+        kaggle_kaggle_187962_187961
+
+    while `data/apple_support_kaggle_pairs.jsonl` contains
+
+        kaggle_187962_187961
+
+    Those strings can never be equal, so the leakage guard below excluded
+    **nothing** -- while README.md, docs/REPORT.md and CLAUDE.md all claimed it
+    worked, and a test asserted it by checking only that both sets were
+    non-empty. Collapsing the repeated prefix is what makes the comparison
+    actually compare.
+    """
+    variants = {raw}
+    collapsed = raw
+    while collapsed.startswith("kaggle_kaggle_"):
+        collapsed = collapsed[len("kaggle_") :]
+        variants.add(collapsed)
+    return variants
+
+
+def _golden_set_exclusions() -> tuple[set[str], set[str], set[str]]:
+    """Returns (source ids, customer texts, reference replies) used by the golden
+    eval set, so the RAG corpus can exclude them and avoid retrieval leakage --
+    otherwise an eval row can retrieve, verbatim, the exact real reply it is
+    being scored against.
+
+    Three keys, and the first one is the one that failed. Matching on id alone is
+    what broke here: a formatting change upstream silently turned the guard into
+    a no-op and nothing noticed for the life of the project. The other two cannot
+    drift that way:
+
+      * exact `customer_text` -- if the same tweet text is in both files, it is
+        the same tweet, whatever either file calls it.
+      * exact `agent_reply` -- @AppleSupport reuses canned replies across
+        different conversations, so a golden row's reference answer can sit in
+        the corpus attached to a *different* customer tweet. Retrieving it still
+        lets a draft be byte-identical to the reference it is scored against,
+        which inflates ROUGE-L without the system having produced anything.
+        Measured: excluding by id and customer text alone still left 39 golden
+        reference replies reachable in the corpus.
+
+    This deliberately over-excludes: a reply string shared by several
+    conversations is removed from the corpus entirely, which costs the retriever
+    some genuinely useful (if generic) examples. That is the right direction for
+    an evaluation corpus -- a slightly smaller corpus is a cost, a corpus that
+    contains the answer key is a broken measurement. The count removed is logged
+    and reported.
+    """
     ids: set[str] = set()
+    texts: set[str] = set()
+    replies: set[str] = set()
     if not GOLDEN_SET_PATH.exists():
-        return ids
+        return ids, texts, replies
     with open(GOLDEN_SET_PATH, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -35,7 +90,19 @@ def _golden_set_source_ids() -> set:
                 continue
             src_id = d.get("source_tweet_id")
             if src_id:
-                ids.add(str(src_id))
+                ids |= _id_variants(str(src_id))
+            text = (d.get("text") or "").strip()
+            if text:
+                texts.add(text)
+            reply = (d.get("reference_resolution") or "").strip()
+            if reply:
+                replies.add(reply)
+    return ids, texts, replies
+
+
+def _golden_set_source_ids() -> set:
+    """Backwards-compatible accessor for the id part of the exclusion set."""
+    ids, _, _ = _golden_set_exclusions()
     return ids
 
 
@@ -46,7 +113,8 @@ def load_real_corpus(max_records: int = RAG_CORPUS_MAX_RECORDS) -> list[dict[str
     tag assigned at ingestion time by the same classifier under evaluation."""
     if not KAGGLE_PAIRS_PATH.exists():
         return []
-    excluded = _golden_set_source_ids()
+    excluded_ids, excluded_texts, excluded_replies = _golden_set_exclusions()
+    skipped = 0
     records: list[dict[str, str]] = []
     with open(KAGGLE_PAIRS_PATH, encoding="utf-8") as f:
         for line in f:
@@ -54,7 +122,12 @@ def load_real_corpus(max_records: int = RAG_CORPUS_MAX_RECORDS) -> list[dict[str
             if not line:
                 continue
             d = json.loads(line)
-            if str(d.get("tweet_id")) in excluded:
+            if (
+                str(d.get("tweet_id")) in excluded_ids
+                or (d.get("customer_text") or "").strip() in excluded_texts
+                or (d.get("agent_reply") or "").strip() in excluded_replies
+            ):
+                skipped += 1
                 continue
             records.append(
                 {
@@ -66,6 +139,16 @@ def load_real_corpus(max_records: int = RAG_CORPUS_MAX_RECORDS) -> list[dict[str
             )
             if len(records) >= max_records:
                 break
+    # Logged, not silent. A guard that excludes zero rows looks exactly like a
+    # guard that is working, which is how the id-format bug survived this long.
+    if skipped == 0:
+        logger.warning(
+            "Leakage guard excluded 0 rows from the RAG corpus. Either the golden set "
+            "shares no source rows with the corpus (possible, but check) or the id "
+            "formats have drifted apart again -- see _id_variants()."
+        )
+    else:
+        logger.info(f"Leakage guard excluded {skipped} golden-set source rows from the RAG corpus.")
     return records
 
 

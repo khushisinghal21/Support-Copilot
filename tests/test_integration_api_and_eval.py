@@ -112,17 +112,53 @@ def test_process_happy_path_returns_the_full_response_shape(client, monkeypatch)
 
 def test_rag_corpus_excludes_every_golden_set_source_row():
     """Without this exclusion an eval row can retrieve -- and be scored against --
-    the exact historical reply it is supposed to be predicting."""
-    from src.drafting.vector_store import _golden_set_source_ids, load_real_corpus
+    the exact historical reply it is supposed to be predicting.
 
-    excluded = _golden_set_source_ids()
-    assert excluded, "no golden source ids found; the guard would be a no-op"
+    THIS TEST USED TO PASS WHILE THE GUARD EXCLUDED NOTHING. The old version
+    asserted only that the exclusion set and the corpus were both non-empty, then
+    that no corpus row's id was in the exclusion set -- which is trivially true
+    when the two id namespaces cannot intersect at all. Golden rows carried
+    doubled ids ("kaggle_kaggle_187962_187961") against corpus ids
+    ("kaggle_187962_187961"), so the guard removed 0 of 1000 rows for the life of
+    the project while README, REPORT and CLAUDE.md all claimed it worked.
 
-    corpus = load_real_corpus(max_records=800)
+    The assertions below are written so that cannot happen again: the guard must
+    demonstrably REMOVE rows, and no golden answer may survive in the corpus by
+    any key.
+    """
+    import json
+
+    from src.config import GOLDEN_SET_PATH, KAGGLE_PAIRS_PATH
+    from src.drafting.vector_store import load_real_corpus
+
+    raw_corpus = [json.loads(line) for line in open(KAGGLE_PAIRS_PATH, encoding="utf-8") if line.strip()]
+    golden = [json.loads(line) for line in open(GOLDEN_SET_PATH, encoding="utf-8") if line.strip()]
+    corpus = load_real_corpus(max_records=10**6)
     assert corpus, "corpus is empty; this test would pass vacuously"
 
-    leaked = [r for r in corpus if str(r["tweet_id"]) in excluded]
-    assert not leaked, f"{len(leaked)} golden-set rows leaked into the RAG corpus"
+    # 1. The guard must actually remove something. A guard that removes nothing
+    #    is indistinguishable from a working one unless you check this.
+    assert len(corpus) < len(raw_corpus), f"leakage guard removed 0 of {len(raw_corpus)} rows -- it is a no-op again"
+
+    # 2. No golden reference answer may be reachable, by any key.
+    golden_replies = {(g.get("reference_resolution") or "").strip() for g in golden if g.get("reference_resolution")}
+    golden_texts = {(g.get("text") or "").strip() for g in golden if g.get("text")}
+    leaked_replies = [r for r in corpus if r["agent_reply"].strip() in golden_replies]
+    leaked_texts = [r for r in corpus if r["customer_text"].strip() in golden_texts]
+    assert not leaked_replies, f"{len(leaked_replies)} golden reference answers are retrievable"
+    assert not leaked_texts, f"{len(leaked_texts)} golden customer tweets are in the corpus"
+
+
+def test_leakage_guard_survives_an_id_format_change():
+    """The specific failure mode: ids drift and the guard silently stops matching.
+    _id_variants must collapse a repeated prefix."""
+    from src.drafting.vector_store import _id_variants
+
+    assert "kaggle_187962_187961" in _id_variants("kaggle_kaggle_187962_187961")
+    assert "kaggle_1_2" in _id_variants("kaggle_kaggle_kaggle_1_2")
+    # An ordinary id is returned unchanged rather than mangled.
+    assert _id_variants("kaggle_1_2") == {"kaggle_1_2"}
+    assert _id_variants("adv_001") == {"adv_001"}
 
 
 def test_corpus_respects_the_configured_record_cap():

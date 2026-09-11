@@ -1,9 +1,15 @@
 {
-  "generated_at": "2026-09-11T12:42:03.170660+00:00",
+  "generated_at": "2026-09-11T16:44:30.469680+00:00",
   "golden_set": {
     "n": 188,
     "n_edge": 38,
-    "pct_edge": 20
+    "pct_edge": 20,
+    "n_escalate": 32,
+    "pct_escalate": 17,
+    "enrichment_x": 19,
+    "n_escalate_authored": 30,
+    "n_escalate_real": 2,
+    "pct_escalate_authored": 94
   },
   "split": {
     "heldout_n": 124,
@@ -91,7 +97,7 @@
       "overall_score": 3.97
     },
     "production": {
-      "overall_score": 4.08
+      "overall_score": 4.07
     }
   },
   "human_agreement": {
@@ -101,6 +107,6 @@
     "num_samples": 50
   },
   "latency_ms": {
-    "p95_production": 62.57
+    "p95_production": 39.13
   }
 }

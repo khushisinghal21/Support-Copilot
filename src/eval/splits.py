@@ -27,10 +27,13 @@ split would have produced a noisier held-out number on a 188-row set.
 """
 
 import json
+import logging
 import random
 from collections import defaultdict
 
 from src.config import GOLDEN_SET_PATH
+
+logger = logging.getLogger(__name__)
 
 # Fixed so the split is reproducible. Changing this re-partitions the data and
 # invalidates comparability with every previously reported number -- don't.
@@ -86,8 +89,22 @@ def load_golden_rows(split: str | None = None, limit: int | None = None) -> list
     with open(GOLDEN_SET_PATH, encoding="utf-8") as f:
         rows = [json.loads(line) for line in f if line.strip()]
 
-    if any("split" not in r for r in rows):
-        rows = assign_splits(rows)
+    missing = [r for r in rows if "split" not in r or r.get("split") not in VALID_SPLITS]
+    if missing:
+        # Assign ONLY the rows that lack a split, keeping every persisted
+        # assignment exactly as it is. The previous version recomputed the whole
+        # partition whenever a single row was missing one, which silently moved
+        # 53 of 188 already-persisted rows across the boundary -- turning
+        # previously held-out rows into calibration rows the thresholds were
+        # tuned on, i.e. quietly reintroducing the exact bias the split exists to
+        # remove, with no warning. Found by adversarial review.
+        logger.warning(
+            f"{len(missing)} golden row(s) have no persisted split; assigning those only. "
+            f"Run `python scripts/add_golden_split.py` to persist them."
+        )
+        assigned = {str(r.get("tweet_id")): r["split"] for r in assign_splits([dict(r) for r in rows])}
+        for row in missing:
+            row["split"] = assigned[str(row.get("tweet_id"))]
 
     if split is not None:
         if split not in VALID_SPLITS:

@@ -20,9 +20,27 @@ EMAIL_REGEX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 # case number ("#100310750365" -- a real false positive found during the
 # audit). Handles +country codes and common grouping patterns without
 # claiming full E.164 coverage.
-PHONE_REGEX = re.compile(r"(?<!\d)(?:\+\d{1,3}[-.\s])?(?:\(\d{2,4}\)[-.\s]?)?\d{2,4}[-.\s]\d{3,4}[-.\s]\d{3,4}(?!\d)")
-CREDIT_CARD_REGEX = re.compile(r"\b(?:\d{4}[-\s]){3}\d{4}\b")
-SSN_REGEX = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+# The separator-free forms were added after a red-team pass auto-handled
+# "my callback number is 4155550199, my card 4111111111111111" -- a full PAN in
+# a public tweet, and the PII-echo guardrail (which reuses these same patterns)
+# then let a draft repeat it back. Requiring separators meant the gate only
+# caught PII that was politely formatted.
+#
+# The 10/11-digit alternation deliberately cannot match the 12-digit support
+# case number "#100310750365" that false-positived in the original audit: the
+# leading (?<!\d) and trailing (?!\d) anchors force the whole run to be exactly
+# 10 or 11 digits.
+PHONE_REGEX = re.compile(
+    r"(?<!\d)(?:\+\d{1,3}[-.\s])?(?:\(\d{2,4}\)[-.\s]?)?\d{2,4}[-.\s]\d{3,4}[-.\s]\d{3,4}(?!\d)"
+    r"|(?<![\d+])\+?\d{10,11}(?!\d)"
+)
+CREDIT_CARD_REGEX = re.compile(
+    r"\b(?:\d{4}[-\s]){3}\d{4}\b"  # 4-4-4-4 with separators
+    r"|(?<!\d)\d{16}(?!\d)"  # bare 16-digit PAN
+    r"|(?<!\d)\d{15}(?!\d)"  # bare 15-digit (Amex)
+    r"|\b\d{4}[-\s]\d{6}[-\s]\d{5}\b"  # Amex 4-6-5 grouping
+)
+SSN_REGEX = re.compile(r"\b\d{3}[-\s]\d{2}[-\s]\d{4}\b")
 
 # ---------------------------------------------------------------------------
 # Negation guard: scan a short window before a match for a negator. Kills the
@@ -33,6 +51,14 @@ NEGATION_WORDS = re.compile(
     r"\b(not|isn't|isnt|wasn't|wasnt|no|never|doesn't|doesnt|didn't|didnt)\b",
     re.IGNORECASE,
 )
+
+
+# A negator only negates within its own clause. Without this, the 20-character
+# lookback treats the "No" in "No joke, my iPhone battery is swollen" as negating
+# the hazard -- so the single highest-severity gate in the system was disabled by
+# the most natural emphasis a frightened customer uses. Found by a red-team pass;
+# it is a false NEGATIVE on a lithium-fire report, not a style issue.
+CLAUSE_BOUNDARY = re.compile(r"[,;:\u2014\u2013-]|\b(but|however|though|although)\b", re.IGNORECASE)
 
 
 def _is_negated(text: str, match_start: int, match_end: int | None = None, window: int = 20) -> bool:
@@ -51,6 +77,18 @@ def _is_negated(text: str, match_start: int, match_end: int | None = None, windo
     fixes it without needing a real parser.
     """
     lookback = text[max(0, match_start - window) : match_start]
+
+    # A negator only negates inside its own clause. Truncate the lookback at the
+    # LAST clause boundary before the match, so "No joke, my iPhone battery is
+    # swollen" and "I'm not kidding, my battery is swollen" are not read as
+    # denials. Before this, that emphatic prefix disabled the highest-severity
+    # gate in the system -- a false negative on a lithium-fire report, found by a
+    # red-team pass. "my battery is NOT swollen" has no boundary between the
+    # negator and the hazard, so it still suppresses correctly.
+    boundaries = list(CLAUSE_BOUNDARY.finditer(lookback))
+    if boundaries:
+        lookback = lookback[boundaries[-1].end() :]
+
     if NEGATION_WORDS.search(lookback):
         return True
     if match_end is not None and NEGATION_WORDS.search(text[match_start:match_end]):
@@ -71,10 +109,24 @@ BATTERY_HAZARD_REGEX = re.compile(
     r"|\b(swollen|bulging|expanding|puffy)\s+(battery|device|phone|case)\b"
     r"|\b(smoke|smoking)\b(?!\s*(-|\s)?free)"
     r"|\b(caught fire|on fire)\b"
-    r"|\bsparks?\b[^.!?]{0,20}\b(charg\w*|port|outlet|plug\w*)\b"
+    # spark(s) could not match "sparking" -- the \b fails before "ing", and
+    # "sparking" is the single most likely word for an electrical fault.
+    r"|\bspark(s|ed|ing)?\b[^.!?]{0,25}\b(charg\w*|port|outlet|plug\w*|cable|adapter|brick)\b"
     r"|\b(explod\w*)\b"
     r"|\bburning (smell|plastic smell)\b"
-    r"|\b(shocked|electric shock|electrocut\w*)\b",
+    r"|\b(shocked|electric shock|electrocut\w*)\b"
+    # Everything below was auto-handled before a red-team pass: a reported
+    # third-degree burn, a device too hot to hold, a melted mains adapter and a
+    # leaking cell all got a troubleshooting reply.
+    r"|\bburn(ed|t|ing)?\b[^.!?]{0,30}\b(hand|finger|skin|leg|lap|blister)\b"
+    r"|\b(hand|finger|skin|leg|lap)\b[^.!?]{0,20}\bburn(ed|t|ing)?\b"
+    r"|\boverheat\w*\b"
+    r"|\btoo hot to (touch|hold)\b"
+    r"|\b(melt(ed|ing)?|scorch\w*|charred)\b[^.!?]{0,30}"
+    r"\b(charger|brick|adapter|cable|port|outlet|phone|device|battery|macbook|ipad|iphone)\b"
+    r"|\b(charger|brick|adapter|cable|port|outlet)\b[^.!?]{0,20}\b(melt(ed|ing)?|scorch\w*)\b"
+    r"|\b(battery|device|phone|ipad|iphone|macbook)\b[^.!?]{0,25}\b(leak\w*|warp\w*)\b"
+    r"|\bleak\w*\b[^.!?]{0,20}\b(fluid|liquid|acid|battery)\b",
     re.IGNORECASE,
 )
 
@@ -84,6 +136,9 @@ PHYSICAL_DAMAGE_REGEX = re.compile(
     r"|\b(dropped|fell|submerged|soaked)\b[^.!?]{0,25}\b(in|into|under)\b[^.!?]{0,10}"
     r"\b(water|toilet|pool|ocean|bath|lake|sink)\b"
     r"|\b(water damage|liquid damage)\b"
+    # "went through the washing machine" was auto-handled.
+    r"|\b(washing machine|dishwasher|washer|dryer)\b[^.!?]{0,30}\b(phone|ipad|iphone|watch|device|airpods)\b"
+    r"|\b(phone|ipad|iphone|watch|device|airpods)\b[^.!?]{0,30}\b(went through|through) the (washing machine|dishwasher|washer|dryer)\b"
     r"|\bmaking (a )?(hissing|popping|crackling) noise\b",
     re.IGNORECASE,
 )
@@ -143,8 +198,23 @@ PROMPT_INJECTION_REGEX = re.compile(
 # guardrail, not just the input triage gate.
 # ---------------------------------------------------------------------------
 UNSAFE_ADVICE_REGEX = re.compile(
-    r"\bpuncture\b.{0,15}\bbattery\b"
+    # "pierce ... with a needle" is a synonym for the one thing this regex exists
+    # to block, and shipped. So did unscrewing, popping the back panel, heat
+    # guns, freezers, ovens and charging under a pillow.
+    r"\b(puncture|pierce|prick)\b.{0,20}\b(battery|cell|pouch)\b"
+    r"|\b(needle|pin|knife|screwdriver)\b.{0,25}\b(battery|cell|swollen|puffy)\b"
+    # Both directions: "take the battery out with a screwdriver" puts the tool
+    # AFTER the component, which the pattern above cannot see.
+    r"|\b(battery|cell)\b.{0,60}\b(screwdriver|needle|pin|knife|pry)\b"
+    r"|\btake (it|the battery|the cell) out\b"
     r"|\bremove\s+the\s+battery\s+yourself\b"
+    r"|\b(unscrew|screwdriver)\b.{0,30}\b(cover|back|panel|case|casing|screws?)\b"
+    r"|\bpop\s+(the\s+)?(back|panel|cover|case)\b"
+    r"|\bdisconnect\b.{0,25}\b(battery|ribbon|connector)\b"
+    r"|\bheat\s*gun\b|\bblow\s*dryer\b"
+    r"|\b(freezer|freeze it|put it in the freezer)\b"
+    r"|\b(bake|oven)\b.{0,25}\b(\d{2,3}\s*(c|f|degrees)|minutes|dry)\b"
+    r"|\bunder\s+(your\s+)?(pillow|blanket|duvet)\b"
     # \bjailbreak\b does not match "jailbreaking" or "jailbroken" -- the trailing
     # suffix defeats the word boundary, so the most common forms of the word were
     # invisible to this check.

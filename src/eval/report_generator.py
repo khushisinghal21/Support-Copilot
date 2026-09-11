@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from src.config import BENCHMARK_SUMMARY_JSON_PATH, GOLDEN_SET_PATH, REPORT_OUTPUT_PATH, TARGET_BRAND
+from src.config import BENCHMARK_SUMMARY_JSON_PATH, GEMINI_API_KEY, GOLDEN_SET_PATH, REPORT_OUTPUT_PATH, TARGET_BRAND
 
 
 def _fmt_kappa(k) -> str:
@@ -72,6 +72,25 @@ def _render_confusion_matrix_markdown(labels: list[str], matrix: list[list[int]]
     return f"{header}{sep}{rows}\n**Legend**\n\n{legend}\n"
 
 
+def _wilson_interval(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score interval.
+
+    Exists because escalation recall is quoted to one decimal off n=21 true
+    escalations. At that size the point estimate is a draw from a wide
+    distribution, and a reader is entitled to see how wide before treating
+    "90.5%" as a property of the system. Wilson rather than normal-approximation
+    because the latter misbehaves near 0 and 1, which is exactly where a safety
+    recall sits.
+    """
+    if n == 0:
+        return (0.0, 0.0)
+    p_hat = successes / n
+    denom = 1 + z**2 / n
+    centre = (p_hat + z**2 / (2 * n)) / denom
+    margin = (z * ((p_hat * (1 - p_hat) / n + z**2 / (4 * n**2)) ** 0.5)) / denom
+    return (max(0.0, centre - margin), min(1.0, centre + margin))
+
+
 def _golden_set_stats() -> dict[str, Any]:
     """Reads the actual golden set on disk rather than hardcoding its size
     and edge-case share -- the header used to claim '200 Hand-Labelled Test
@@ -83,9 +102,44 @@ def _golden_set_stats() -> dict[str, Any]:
         n = len(rows)
         n_edge = sum(1 for r in rows if r.get("is_edge_case"))
         pct_edge = round(100 * n_edge / n) if n else 0
-        return {"n": n, "n_edge": n_edge, "pct_edge": pct_edge}
+        # Escalation counts are taken from the WHOLE golden set. Section 5 item 1
+        # used to divide the HELD-OUT escalation count by the full-set n, which
+        # understated the project's own enrichment (21/188 = 11%, when the real
+        # figure is 32/188 = 17%) inside a sentence that simultaneously claimed
+        # "~20x" -- two inconsistent numbers in one breath. Found by adversarial
+        # review.
+        escalations = [r for r in rows if r.get("true_triage_action") == "ESCALATE"]
+        n_escalate = len(escalations)
+        pct_escalate = round(100 * n_escalate / n) if n else 0
+        n_escalate_authored = sum(1 for r in escalations if r.get("source") == "authored_adversarial")
+        n_escalate_real = n_escalate - n_escalate_authored
+        pct_escalate_authored = round(100 * n_escalate_authored / n_escalate) if n_escalate else 0
+        # Real base rate measured during golden-set construction: ~9 escalation
+        # worthy tweets per 995 sampled (data/README.md).
+        enrichment_x = round((n_escalate / n) / (9 / 995)) if n else 0
+        return {
+            "n": n,
+            "n_edge": n_edge,
+            "pct_edge": pct_edge,
+            "n_escalate": n_escalate,
+            "pct_escalate": pct_escalate,
+            "enrichment_x": enrichment_x,
+            "n_escalate_authored": n_escalate_authored,
+            "n_escalate_real": n_escalate_real,
+            "pct_escalate_authored": pct_escalate_authored,
+        }
     except Exception:
-        return {"n": 0, "n_edge": 0, "pct_edge": 0}
+        return {
+            "n": 0,
+            "n_edge": 0,
+            "pct_edge": 0,
+            "n_escalate": 0,
+            "pct_escalate": 0,
+            "enrichment_x": 0,
+            "n_escalate_authored": 0,
+            "n_escalate_real": 0,
+            "pct_escalate_authored": 0,
+        }
 
 
 def generate_markdown_report(
@@ -101,6 +155,44 @@ def generate_markdown_report(
     """Compiles the formal Hiver SDE Intern benchmark evaluation report."""
 
     gs = _golden_set_stats()
+
+    # Whether a real LLM was actually called. Without this the report quotes
+    # "LLM Judge Quality 4.3 / 4.0 / 4.1" with no indication that, on a run with
+    # no API key, the judge is keyword matching and the generator returns a
+    # retrieved snippet -- so those rows describe a rubric scoring canned text,
+    # not an LLM judging generated replies. Found by adversarial review.
+    if GEMINI_API_KEY:
+        judge_mode_note = (
+            "> **Judge mode: live LLM.** `GEMINI_API_KEY` was set for this run, so the scores below come from real "
+            "model calls."
+        )
+    else:
+        judge_mode_note = (
+            "> **Judge mode: DETERMINISTIC FALLBACK -- read the judge numbers accordingly.** No `GEMINI_API_KEY` was "
+            "set for this run, so `src/eval/judge.py` scored replies with its keyword rubric and "
+            "`src/drafting/generator.py` returned a retrieved snippet instead of a generated draft. Every "
+            "judge-derived figure in this report therefore measures a rubric against canned text, **not** an LLM "
+            "judging model output, and must not be quoted as an LLM-graded result. The corroborating signal: the "
+            "judge scores the trivial canned baseline ABOVE the production system, which is what a measure carrying "
+            "no information looks like."
+        )
+
+    # Interval on the safety metric. n is small enough that the point estimate
+    # alone is misleading -- quoting 90.5% to one decimal off 21 events implies a
+    # precision the data cannot support.
+    _esc_true = prod_metrics["triage"].get("total_escalations_true", 0)
+    _esc_missed = prod_metrics["triage"].get("missed_escalation_count", 0)
+    _esc_caught = max(0, _esc_true - _esc_missed)
+    _lo, _hi = _wilson_interval(_esc_caught, _esc_true)
+    recall_ci_note = (
+        f"> **On the precision of these numbers.** Escalation recall is "
+        f"{prod_metrics['triage']['escalation_recall'] * 100:.1f}% because the system caught {_esc_caught} of "
+        f"{_esc_true} true escalations in the held-out set. With n = {_esc_true}, the 95% Wilson interval is "
+        f"**{_lo * 100:.1f}% - {_hi * 100:.1f}%** -- the data are consistent with materially worse real performance, "
+        f"and '{_esc_missed} missed' is a draw from a wide distribution rather than a property of the system. "
+        f"The *direction* is solid (Fisher exact against the TF-IDF baseline gives p < 0.001 on both escalation "
+        f"recall and intent accuracy); the trailing digit is not. Quote the interval, not the point estimate."
+    )
 
     # Section 5's disclosure of the calibration/held-out split is built from the
     # real split_info handed in by the runner. When a caller does not supply it
@@ -123,8 +215,18 @@ def generate_markdown_report(
         split_disclosure = (
             f"**What changed:** `data/golden_eval_set.jsonl` now carries a persisted, seeded "
             f"(`SPLIT_SEED={split_info.get('seed')}`), stratified `split` field. The sweep script reads the "
-            f"**{split_info.get('calibration_n')} calibration rows** only; every headline number in this report is "
-            f"measured on the **{split_info.get('heldout_n')} held-out rows** the thresholds were never tuned against. "
+            f"**{split_info.get('calibration_n')} calibration rows** only, and every headline number here is measured "
+            f"on the **{split_info.get('heldout_n')} held-out rows**. "
+            f"\n\n   **What did NOT change, stated because an earlier draft of this section overstated it:** the "
+            f"threshold *values* in `src/config.py` (`MIN_INTENT_CONFIDENCE=0.40`, `MIN_RETRIEVAL_SIMILARITY=0.20`) "
+            f"were chosen BEFORE the split existed, against all 188 rows (`docs/AUDIT_AND_FIX_PLAN.md` §7.10). The "
+            f"split constrains every FUTURE sweep; it does not retroactively decontaminate the values already in the "
+            f"file. So these held-out numbers are better than the all-188 numbers they replaced, and still not fully "
+            f"independent. Re-running the sweep on the calibration rows alone now suggests **0.75** and **0.50** "
+            f"rather than the shipped 0.40 and 0.20 -- those are rejected on the same cost grounds §7.10 gives "
+            f"(at 0.50, retrieval similarity falsely escalates 36.5% of genuine AUTO_HANDLE rows to catch escalations "
+            f"four earlier gates already handle), not because they are inconvenient. Honest summary: the leakage is "
+            f"reduced and disclosed, not eliminated. "
             f"The gap is published rather than hidden: intent accuracy {_cal_ia * 100:.1f}% → {_held_ia * 100:.1f}% "
             f"({(_held_ia - _cal_ia) * 100:+.1f} pts) and triage accuracy {_cal_ta * 100:.1f}% → {_held_ta * 100:.1f}% "
             f"({(_held_ta - _cal_ta) * 100:+.1f} pts) moving from tuned-on data to held-out data. "
@@ -212,6 +314,8 @@ than being hidden behind a hardcoded "+" prefix.
 
 ## 3. LLM-as-a-Judge & Human Agreement Calibration
 
+{judge_mode_note}
+
 To check whether the LLM-as-a-judge rubric can be trusted, we compared judge scores against **{agreement_metrics["num_samples"]} human-scored query/reply pairs** (see `data/README.md` for how this sample was built and its disclosed limitations -- it is an AI-assisted reading pass against the rubric, not a blind independent annotator).
 
 - **Sample Size**: {agreement_metrics["num_samples"]} hand-annotated cases
@@ -262,10 +366,12 @@ Even with strong headline metrics, a thorough engineering audit requires identif
 
 ## 5. "What is Misleading About My Headline Number?" (Mandatory Section)
 
+{recall_ci_note}
+
 While our **Macro-F1 of {prod_metrics["intent"]["macro_f1"]:.4f}** and **Triage Accuracy of {prod_metrics["triage"]["accuracy"] * 100:.1f}%** may look strong in isolation, headline numbers conceal subtle real-world failure patterns -- and, per Section 3, the human-agreement kappa on the judge itself is currently weak, which should temper confidence in any of the judge-derived numbers above:
 
 1. **The Golden Set's Escalation Rate Is Deliberately ~20x the Real Rate**:
-   Of the {prod_metrics["triage"]["total_escalations_true"]} true-ESCALATE rows in this {gs["n"]}-row golden set (~{round(100 * prod_metrics["triage"]["total_escalations_true"] / gs["n"]) if gs["n"] else 0}%), the large majority were manually reviewed and, in several cases, authored as adversarial examples (`source: authored_adversarial` in `data/golden_eval_set.jsonl`) -- because an unweighted random sample of the real Kaggle pairs surfaced only ~9 genuine escalation-worthy tweets out of 995 (well under 1%). This oversampling was a deliberate, disclosed choice (see `data/README.md`) to get enough escalation examples to measure precision/recall at all -- but it means Escalation Recall/Precision above describe performance on an escalation-enriched sample, not the real-world base rate. On real unfiltered traffic, the same false-escalation rules would fire far less often in absolute terms, and the cost of a single missed escalation (safety-relevant) is not comparable to the cost of a single false one (ticket volume) -- a blended "Triage Accuracy" number hides that asymmetry entirely.
+   Of the {gs["n_escalate"]} true-ESCALATE rows in this {gs["n"]}-row golden set (~{gs["pct_escalate"]}%, about **{gs["enrichment_x"]}x** the real base rate), **{gs["n_escalate_authored"]} of {gs["n_escalate"]} ({gs["pct_escalate_authored"]}%) were authored by the author rather than found in real traffic**; only {gs["n_escalate_real"]} are real tweets. That matters more than the enrichment ratio: the hazard, PII and injection regexes were written by the same person against these same phrasings, so escalation recall is substantially a self-consistency check. Escalation examples were authored as adversarial cases (`source: authored_adversarial` in `data/golden_eval_set.jsonl`) -- because an unweighted random sample of the real Kaggle pairs surfaced only ~9 genuine escalation-worthy tweets out of 995 (well under 1%). This oversampling was a deliberate, disclosed choice (see `data/README.md`) to get enough escalation examples to measure precision/recall at all -- but it means Escalation Recall/Precision above describe performance on an escalation-enriched sample, not the real-world base rate. On real unfiltered traffic, the same false-escalation rules would fire far less often in absolute terms, and the cost of a single missed escalation (safety-relevant) is not comparable to the cost of a single false one (ticket volume) -- a blended "Triage Accuracy" number hides that asymmetry entirely.
 
 2. **Isolated Single-Turn Evaluation**:
    Our evaluation measures single-turn tweet resolution. Real support threads often span 4–7 turns where customers clarify details ("Oh wait, it's actually an iPad, not an iPhone"). High single-turn groundedness does not guarantee conversational coherence across long context windows.

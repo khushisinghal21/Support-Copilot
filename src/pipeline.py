@@ -88,10 +88,15 @@ def flush_decision_log(timeout: float = 5.0) -> bool:
     """Blocks until queued audit rows have been written. For tests and for a
     clean shutdown -- the request path never calls this."""
     _ensure_log_writer()
+    # queue.empty() goes True the instant the writer calls get() -- BEFORE the row
+    # reaches disk -- so the previous implementation could return True with
+    # nothing written, and a test asserting on that return value then read an
+    # empty file. unfinished_tasks only drops when the writer calls task_done(),
+    # which it does after the write. Found by adversarial review.
     deadline = time.perf_counter() + timeout
-    while not _log_queue.empty() and time.perf_counter() < deadline:
+    while _log_queue.unfinished_tasks and time.perf_counter() < deadline:
         time.sleep(0.01)
-    return _log_queue.empty()
+    return not _log_queue.unfinished_tasks
 
 
 def _append_decision_log(response: SupportResponse) -> None:
@@ -232,7 +237,7 @@ class SupportPipeline:
             # Non-negotiable Engineering Rule: Fail-Closed on any unhandled exception
             logger.error(f"SupportPipeline encountered error processing tweet {tweet.tweet_id}: {e}", exc_info=True)
             duration_ms = (time.perf_counter() - start_time) * 1000.0
-            return SupportResponse(
+            failed_response = SupportResponse(
                 tweet_id=tweet.tweet_id,
                 intent=IntentResult(
                     primary_intent=AppleIntentEnum.OUT_OF_SCOPE_AMBIGUOUS,
@@ -249,6 +254,12 @@ class SupportPipeline:
                 grounding_context=None,
                 execution_time_ms=round(duration_ms, 2),
             )
+            # Audit the fail-closed escalation too. Every other exit path wrote a
+            # row and this one did not -- so the ticket an operator most needs
+            # context for (the system broke, a human is now handling it) arrived
+            # with no audit trail at all. Found by adversarial review.
+            _append_decision_log(failed_response)
+            return failed_response
         finally:
             reset_tweet_id(token)
 

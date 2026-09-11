@@ -55,7 +55,7 @@ import logging
 import re
 
 from src.config import GROUNDING_MODE, MAX_TWEET_CHARS, MIN_GROUNDING_SIMILARITY
-from src.triage.rules import EMAIL_REGEX, PHONE_REGEX, RuleMatcher
+from src.triage.rules import CREDIT_CARD_REGEX, EMAIL_REGEX, PHONE_REGEX, SSN_REGEX, RuleMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,21 @@ PII_SOLICITATION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-URL_EXTRACTOR = re.compile(r"https?://\S+|apple\.co/\S+|reportaproblem\.apple\.com\S*|iforgot\.apple\.com\S*")
+# Scheme-less domains must be extracted too. The previous pattern only matched
+# "https?://..." plus three hardcoded Apple hosts, so a draft containing
+# "Verify your identity at appleid-verify.com/unlock" yielded ZERO extracted
+# URLs -- validate_urls() then iterated an empty list and returned OK. The
+# whitelist was bypassed simply by omitting the scheme, and Twitter auto-links
+# bare domains, so the result is a clickable phishing link auto-tweeted from
+# the brand account. Found by a red-team pass.
+#
+# The TLD is required to be >= 2 alphabetic characters, which keeps version
+# strings ("iOS 17.4.1"), decimals and "e.g." out of the match.
+URL_EXTRACTOR = re.compile(
+    r"https?://\S+"
+    r"|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(?:/\S*)?",
+    re.IGNORECASE,
+)
 
 _STOPWORDS = {
     "the",
@@ -178,17 +192,25 @@ class OutputGuardrail:
         return len(invalid_urls) == 0, invalid_urls
 
     def check_pii_echo(self, draft: str, source_customer_text: str | None) -> tuple[bool, list[str]]:
-        """Returns (ok, echoed_values) -- False if the draft repeats an email
-        or phone number that appeared in the customer's own message."""
+        """Returns (ok, echoed_values) -- False if the draft repeats PII that
+        appeared in the customer's own message.
+
+        Cards and SSNs are checked as well as emails and phone numbers. They were
+        not, which meant the check advertised as "defence in depth" would happily
+        let a reply re-publish a full card number the customer had tweeted -- the
+        single worst thing this guardrail could fail to catch. Found by a red-team
+        pass.
+        """
         if not source_customer_text:
             return True, []
         echoed = []
-        for match in EMAIL_REGEX.findall(source_customer_text):
-            if match.lower() in draft.lower():
-                echoed.append(match)
-        for match in PHONE_REGEX.findall(source_customer_text):
-            if match and match in draft:
-                echoed.append(match)
+        for pattern in (EMAIL_REGEX, PHONE_REGEX, CREDIT_CARD_REGEX, SSN_REGEX):
+            for match in pattern.findall(source_customer_text):
+                value = match if isinstance(match, str) else next((m for m in match if m), "")
+                if not value:
+                    continue
+                if value.lower() in draft.lower() and value not in echoed:
+                    echoed.append(value)
         return len(echoed) == 0, echoed
 
     def check_unsafe_advice(self, text: str) -> tuple[bool, list[str]]:

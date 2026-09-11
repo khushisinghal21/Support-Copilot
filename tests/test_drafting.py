@@ -19,10 +19,29 @@ def guardrail():
 
 
 def test_retriever_returns_relevant_battery_resolutions(retriever):
+    """Relevance is asserted on the retrieved QUERY and the similarity score, not
+    on the reply text.
+
+    The original assertion was `any("battery" in s.lower() for s in res.snippets)`
+    -- i.e. the retrieved *agent reply* had to contain the word "battery". That
+    passed only because the golden set's own source rows were in the RAG corpus:
+    it was retrieving the row's own reference answer, which naturally echoed the
+    question. With the leakage guard actually working (it excluded zero rows
+    before -- see src/drafting/vector_store.py), the retriever returns real
+    @AppleSupport replies, and real replies rarely repeat the problem noun
+    ("Send us a DM and let us know what version of iOS you're running").
+
+    So the old assertion was measuring leakage, not relevance. Similarity is
+    still high (0.74 here), and the matched customer query is still about
+    battery -- which is what "relevant retrieval" actually means.
+    """
     res = retriever.retrieve("My iPhone battery dies in two hours", intent="HARDWARE_AND_BATTERY", k=2)
     assert len(res.snippets) == 2
     assert res.max_similarity > 0.50
-    assert any("battery" in s.lower() for s in res.snippets)
+    matched = [c.customer_text.lower() for c in res.citations]
+    assert any(any(word in q for word in ("battery", "charge", "power", "die", "drain")) for q in matched), (
+        f"no retrieved customer query looks battery-related: {matched}"
+    )
 
 
 def test_retriever_returns_wifi_resolutions(retriever):

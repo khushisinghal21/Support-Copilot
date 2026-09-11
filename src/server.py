@@ -112,6 +112,30 @@ def get_pipeline() -> SupportPipeline:
 _buckets: dict[str, tuple[float, float]] = {}  # ip -> (tokens, last_refill_ts)
 _bucket_lock = threading.Lock()
 
+# A bucket that has sat idle this long carries no information -- its client is
+# indistinguishable from one never seen before. Evicting them bounds the dict.
+# Without this it grew one entry per source IP forever, on a host whose entire
+# design constraint is a 512MB ceiling; a public instance or any rotating source
+# grows it without limit. Found by adversarial review.
+_BUCKET_TTL_SECONDS = 3600.0
+_BUCKET_MAX_ENTRIES = 10_000
+
+
+def _evict_stale_buckets(now: float) -> None:
+    """Caller must hold _bucket_lock."""
+    if len(_buckets) < _BUCKET_MAX_ENTRIES:
+        return
+    for ip in [ip for ip, (_, last) in _buckets.items() if now - last > _BUCKET_TTL_SECONDS]:
+        del _buckets[ip]
+    if len(_buckets) >= _BUCKET_MAX_ENTRIES:
+        # Still over budget after evicting idle clients: drop the oldest half
+        # rather than let the table grow. Dropping a bucket is fail-open for that
+        # client (they get a fresh allowance), which is the right direction -- a
+        # rate limiter must not itself become a memory-exhaustion vector.
+        for ip, _ in sorted(_buckets.items(), key=lambda kv: kv[1][1])[: len(_buckets) // 2]:
+            del _buckets[ip]
+        logger.warning("Rate-limiter bucket table exceeded %d entries; evicted the oldest half.", _BUCKET_MAX_ENTRIES)
+
 
 def _rate_limit_check(client_ip: str) -> tuple[bool, float]:
     """Returns (allowed, retry_after_seconds). A limit of 0 disables the check."""
@@ -121,6 +145,7 @@ def _rate_limit_check(client_ip: str) -> tuple[bool, float]:
     capacity = float(max(RATE_LIMIT_BURST, 1))
     now = time.monotonic()
     with _bucket_lock:
+        _evict_stale_buckets(now)
         tokens, last = _buckets.get(client_ip, (capacity, now))
         tokens = min(capacity, tokens + (now - last) * refill_per_sec)
         if tokens >= 1.0:
