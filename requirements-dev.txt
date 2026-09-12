@@ -1,0 +1,20 @@
+# Development tooling. NOT imported by src/, so it is deliberately not in
+# requirements.txt -- but it IS required to reproduce the checks CI gates on, and
+# before this file existed there was nowhere to install it from. A contributor
+# following CONTRIBUTING.md got "command not found: ruff" and had to read
+# .github/workflows/ci.yml to discover the missing packages. Found while handing
+# the branch over.
+#
+# PINNED, and ruff is pinned to the SAME version .pre-commit-config.yaml uses.
+# That is the part that actually matters: pre-commit runs ruff in its own
+# isolated environment at a pinned rev, while CI was installing whatever ruff
+# resolved to that day. A new ruff release adding a rule would therefore pass a
+# contributor's pre-commit hook and fail CI, with no way to reproduce the failure
+# locally. If you bump one, bump both.
+ruff==0.16.7                 # keep in sync with .pre-commit-config.yaml rev
+mypy==2.3.1
+pytest-cov==7.1.0
+pre-commit>=4.0.0
+
+# mypy needs the Pydantic plugin named in pyproject.toml's [tool.mypy]; it ships
+# with pydantic itself, which requirements.txt already pins.

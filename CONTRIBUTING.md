@@ -13,6 +13,12 @@ pip install --index-url https://download.pytorch.org/whl/cpu \
             --extra-index-url https://pypi.org/simple \
             -r requirements.lock
 
+# The dev tooling (ruff, mypy, pytest-cov, pre-commit) is NOT in the runtime
+# requirements, because src/ does not import it -- but you need it to run the
+# checks CI gates on, and ruff is pinned here to the same version
+# .pre-commit-config.yaml uses so your hook and CI cannot disagree.
+pip install -r requirements-dev.txt
+
 cp .env.example .env      # optional: add a real GEMINI_API_KEY
 pre-commit install        # runs the same checks CI does, before the commit
 ```

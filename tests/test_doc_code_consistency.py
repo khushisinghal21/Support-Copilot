@@ -198,3 +198,40 @@ def test_report_discloses_the_false_clarify_rate():
         "REPORT.md section 5 no longer discloses the false-CLARIFY rate. "
         "Regenerate it: python -m src.eval.runner"
     )
+
+
+def test_ruff_is_pinned_to_the_same_version_in_ci_and_pre_commit():
+    """pre-commit runs ruff in its own isolated env at a pinned rev; CI used to
+    install whatever ruff resolved to that day. A new ruff release adding a rule
+    would therefore pass a contributor's pre-commit hook and fail CI, with no way
+    to reproduce the failure locally. Both now come from requirements-dev.txt and
+    .pre-commit-config.yaml respectively, and this asserts they agree.
+    """
+    import re
+
+    dev = (REPO_ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
+    hooks = (REPO_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+
+    pinned = re.search(r"^ruff==([0-9][^\s#]*)", dev, re.MULTILINE)
+    assert pinned, "requirements-dev.txt does not pin ruff with =="
+
+    hook_rev = re.search(r"ruff-pre-commit\s*\n\s*rev:\s*v?([0-9][^\s#]*)", hooks)
+    assert hook_rev, ".pre-commit-config.yaml has no ruff-pre-commit rev"
+
+    assert pinned.group(1) == hook_rev.group(1), (
+        f"ruff is {pinned.group(1)} in requirements-dev.txt but "
+        f"{hook_rev.group(1)} in .pre-commit-config.yaml. Bump both together."
+    )
+
+
+def test_ci_installs_the_dev_tools_from_the_declared_file():
+    """The gap this closes: CONTRIBUTING.md told contributors to run ruff and
+    mypy, CI failed the build on them, and there was no file to install them
+    from -- you had to read the workflow YAML. A floating `pip install ruff mypy`
+    in CI is also how the version skew above becomes possible.
+    """
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "requirements-dev.txt" in ci, "CI does not install the pinned dev tooling"
+    assert "pip install ruff mypy" not in ci, (
+        "CI is installing dev tools unpinned again; use requirements-dev.txt"
+    )

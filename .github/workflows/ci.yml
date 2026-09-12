@@ -52,7 +52,7 @@ jobs:
           pip install --index-url https://download.pytorch.org/whl/cpu \
                       --extra-index-url https://pypi.org/simple \
                       -r requirements.txt
-          pip install ruff mypy pytest-cov
+          pip install -r requirements-dev.txt
 
       - name: Lint (ruff check)
         run: ruff check .
