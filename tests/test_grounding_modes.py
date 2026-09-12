@@ -8,9 +8,17 @@ Measured on 188 real historical agent replies scored against what the retriever
 returns for their own row (references are grounded by construction, so anything
 flagged there is a false positive):
 
-    lexical   @ 0.12 -> 18.6% of genuine replies wrongly flagged ungrounded
-    embedding @ 0.30 ->  9.6%
-    embedding @ 0.65 -> 33.0%   (rejected: see test docstring below)
+    lexical   @ 0.12 -> 31.4% of genuine replies wrongly flagged ungrounded
+    embedding @ 0.30 -> 19.7%
+    embedding @ 0.65 -> 72.3%   (rejected: see test docstring below)
+
+These replace 18.6 / 9.6 / 33.0, which this file carried unannotated as the
+justification for the shipped threshold. Those were measured before the RAG
+leakage guard was repaired -- against a corpus that still contained the golden
+set's own reference replies, so every reply retrieved itself and all three rates
+were floored far below the truth. Regenerate with
+`python scripts/measure_grounding_modes.py`, which writes docs/grounding_modes.json;
+the report renders from that file so these numbers cannot drift again.
 """
 
 from unittest.mock import patch
@@ -65,7 +73,7 @@ def test_embedding_grounding_known_blind_spot():
 
     The threshold is not the fix. Raising it to 0.65 makes this case fail, but
     the measurement on 188 real agent replies shows that floor would falsely
-    reject 33.0% of genuinely grounded replies (vs 9.6% at 0.30). Trading a 3.4x
+    reject 72.3% of genuinely grounded replies (vs 19.7% at 0.30). Trading a 3.7x
     false-escalation rate for one class of catch is not a trade worth making.
     The real fix is an entailment/NLI model, which is out of scope here and is
     recorded as such in docs/REPORT.md.

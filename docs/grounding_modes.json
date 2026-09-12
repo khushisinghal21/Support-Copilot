@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-09-11 17:10:51",
+  "population_n": 188,
+  "modes": [
+    {
+      "mode": "lexical",
+      "floor": 0.12,
+      "n": 188,
+      "flagged": 59,
+      "false_positive_rate_pct": 31.4
+    },
+    {
+      "mode": "embedding",
+      "floor": 0.3,
+      "n": 188,
+      "flagged": 37,
+      "false_positive_rate_pct": 19.7
+    },
+    {
+      "mode": "embedding",
+      "floor": 0.65,
+      "n": 188,
+      "flagged": 136,
+      "false_positive_rate_pct": 72.3
+    }
+  ]
+}

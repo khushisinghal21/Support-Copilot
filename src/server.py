@@ -18,6 +18,7 @@ from src.config import (
     RATE_LIMIT_BURST,
     RATE_LIMIT_PER_MINUTE,
     TARGET_BRAND,
+    TRUST_PROXY_HEADERS,
 )
 from src.logging_config import setup_logging
 from src.models import SupportResponse, TweetInput
@@ -155,6 +156,41 @@ def _rate_limit_check(client_ip: str) -> tuple[bool, float]:
         return False, max(1.0, (1.0 - tokens) / refill_per_sec)
 
 
+def _client_key(request: Request) -> str:
+    """The identity the rate limiter buckets on.
+
+    WHY THIS IS NOT JUST request.client.host
+    ----------------------------------------
+    It was, and DECISION_LOG 24 described the result as "an in-process per-IP
+    token bucket". Behind a reverse proxy it is nothing of the kind: uvicorn only
+    rewrites `client.host` from forwarded headers for peers in
+    `--forwarded-allow-ips`, which defaults to 127.0.0.1 and is set by neither
+    render.yaml nor the Dockerfile. So on the deployed demo every request arrived
+    carrying the edge proxy's address and all of them shared ONE bucket -- one
+    client spending 30 requests locked out every other client and the dashboard
+    too. A self-inflicted outage, from a control advertised as abuse protection.
+    Measured in round 3: six distinct X-Forwarded-For values -> [200,200,200,429,
+    429,429] with a single bucket key.
+
+    Trusting the header unconditionally is the opposite mistake -- the limit then
+    becomes bypassable by spoofing it -- so this is gated on an explicit
+    TRUST_PROXY_HEADERS setting, and when trusted it takes the LEFTMOST entry,
+    which is the originating client as written by a single trusted edge proxy.
+    Operators behind a chain of proxies need a hop count; that is not this
+    deployment and is not pretended to be handled.
+    """
+    if TRUST_PROXY_HEADERS:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            first = forwarded.split(",")[0].strip()
+            if first:
+                return first
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip and real_ip.strip():
+            return real_ip.strip()
+    return request.client.host if request.client else "unknown"
+
+
 def _require_api_key(provided: str | None) -> None:
     """No-op unless API_KEY is configured, so local dev and the existing public
     demo are unaffected by this existing."""
@@ -165,9 +201,22 @@ def _require_api_key(provided: str | None) -> None:
 
 
 class QueryRequest(BaseModel):
-    text: str = Field(..., min_length=1, description="Customer tweet text")
-    author_id: str = Field(default="customer_web_user", description="Author handle or identifier")
-    tweet_id: str | None = Field(None, description="Optional custom tweet ID")
+    # max_length is a real control, not tidiness. The endpoint had no upper bound
+    # at all, so a single request could hand the pipeline an arbitrarily long
+    # body -- every regex in the triage cascade and the output guardrails then
+    # scanned all of it, on the request thread, before any rate limiting could
+    # matter. Adversarial review round 2 turned that into a measured 47-second
+    # response from one 100KB POST. The regex that made it quadratic is fixed
+    # (see URL_EXTRACTOR), but bounding the input is the control that survives
+    # the *next* pattern someone adds.
+    #
+    # 4000 rather than MAX_TWEET_CHARS (280): 280 is the length limit the drafter
+    # must respect on output, while real inbound text can legitimately be a long
+    # DM or pasted error log. This bounds the blast radius without deciding what
+    # a customer is allowed to say.
+    text: str = Field(..., min_length=1, max_length=4000, description="Customer tweet text")
+    author_id: str = Field(default="customer_web_user", max_length=200, description="Author handle or identifier")
+    tweet_id: str | None = Field(None, max_length=200, description="Optional custom tweet ID")
 
 
 SAMPLE_SCENARIOS = [
@@ -266,8 +315,7 @@ def process_tweet(
 ):
     _require_api_key(x_api_key)
 
-    client_ip = request.client.host if request.client else "unknown"
-    allowed, retry_after = _rate_limit_check(client_ip)
+    allowed, retry_after = _rate_limit_check(_client_key(request))
     if not allowed:
         raise HTTPException(
             status_code=429,

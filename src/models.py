@@ -54,7 +54,12 @@ class TweetInput(BaseModel):
     """Input payload representing an incoming customer tweet."""
 
     tweet_id: str = Field(..., description="Unique tweet snowflake ID")
-    text: str = Field(..., min_length=1, description="Raw tweet text")
+    # max_length here, not only on the HTTP request model. src/cli.py and the eval
+    # harness construct TweetInput directly, so the 4000-char bound on
+    # QueryRequest did not apply to them -- round 3 measured a 100KB text through
+    # the CLI path spending 8.56s inside the input gates. The bound belongs on the
+    # type every caller uses, not on one entry point.
+    text: str = Field(..., min_length=1, max_length=4000, description="Raw tweet text")
     author_id: str = Field(..., description="Anonymized or raw author identifier")
     created_at: str | None = Field(None, description="ISO timestamp of tweet creation")
     in_reply_to_tweet_id: str | None = Field(None, description="Parent tweet ID if in thread")

@@ -68,6 +68,14 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = Field(default=30, ge=0, le=100_000)
     # ge=1: a burst of 0 would reject every client's first request.
     RATE_LIMIT_BURST: int = Field(default=10, ge=1, le=100_000)
+    # Whether X-Forwarded-For may be believed when identifying a client for rate
+    # limiting. Defaults FALSE because a trusted-by-default forwarding header is
+    # a trivially spoofable limit. It must be set to true wherever the app really
+    # does sit behind a single trusted edge proxy (the Render deployment does) --
+    # otherwise every request shares one bucket and the limit becomes a
+    # denial-of-service against the app's own users. Round 3 measured exactly
+    # that. See _client_key() in src/server.py.
+    TRUST_PROXY_HEADERS: bool = Field(default=False)
 
     # ge=1: an unbounded or zero-length audit queue both defeat the point.
     DECISION_LOG_QUEUE_MAX: int = Field(default=1000, ge=1, le=1_000_000)
@@ -250,6 +258,7 @@ CORS_ALLOW_ORIGINS: str = os.getenv("CORS_ALLOW_ORIGINS", "*")
 # under it. Set RATE_LIMIT_PER_MINUTE=0 to disable entirely.
 RATE_LIMIT_PER_MINUTE: int = settings.RATE_LIMIT_PER_MINUTE
 RATE_LIMIT_BURST: int = settings.RATE_LIMIT_BURST
+TRUST_PROXY_HEADERS: bool = settings.TRUST_PROXY_HEADERS
 
 # Optional shared-secret header check on the API. Empty (the default) means no
 # auth, so local development and the existing public demo behave exactly as

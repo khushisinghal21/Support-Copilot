@@ -63,19 +63,31 @@ def assign_splits(rows: list[dict]) -> list[dict]:
     for row in rows:
         buckets[_stratum_key(row)].append(row)
 
-    assignment: dict[str, str] = {}
+    # Keyed by id(), not by tweet_id. Keying on tweet_id meant two rows sharing an
+    # id -- or two rows whose tweet_id is None, which stringify to the same "None"
+    # -- collapsed to one dict entry, and the LAST stratum processed silently
+    # overwrote the earlier one's assignment. A row in the ESCALATE stratum could
+    # therefore receive the split computed for an AUTO_HANDLE row, defeating the
+    # stratification this function exists to provide, with no error.
+    #
+    # LATENT, NOT ACTIVE: the current data/golden_eval_set.jsonl has 188 rows with
+    # 188 distinct non-null tweet_ids, so no assignment was ever wrong in any
+    # reported number. This closes the trapdoor before a future append opens it.
+    # Found by adversarial review round 2; the collision is reproduced in
+    # tests/test_splits.py::test_duplicate_tweet_ids_do_not_collide.
+    assignment: dict[int, str] = {}
     for key in sorted(buckets):
-        members = sorted(buckets[key], key=lambda r: str(r.get("tweet_id")))
+        members = sorted(buckets[key], key=lambda r: (str(r.get("tweet_id")), id(r)))
         rng = random.Random(f"{SPLIT_SEED}:{key}")
         rng.shuffle(members)
         # round() rather than int(): with int(), a stratum of 2 rows would put
         # zero rows in calibration, quietly dropping that stratum from the sweep.
         n_cal = max(1, round(len(members) * CALIBRATION_FRACTION)) if members else 0
         for i, row in enumerate(members):
-            assignment[str(row.get("tweet_id"))] = CALIBRATION if i < n_cal else HELDOUT
+            assignment[id(row)] = CALIBRATION if i < n_cal else HELDOUT
 
     for row in rows:
-        row["split"] = assignment[str(row.get("tweet_id"))]
+        row["split"] = assignment[id(row)]
     return rows
 
 
@@ -102,9 +114,14 @@ def load_golden_rows(split: str | None = None, limit: int | None = None) -> list
             f"{len(missing)} golden row(s) have no persisted split; assigning those only. "
             f"Run `python scripts/add_golden_split.py` to persist them."
         )
-        assigned = {str(r.get("tweet_id")): r["split"] for r in assign_splits([dict(r) for r in rows])}
+        # Zipped by POSITION, not keyed by tweet_id: assign_splits() returns the
+        # copies in the order it was given them, and a tweet_id-keyed lookup here
+        # would reintroduce the same collision the function itself just stopped
+        # making (duplicate or null ids collapsing to one entry).
+        assigned = assign_splits([dict(r) for r in rows])
+        by_identity = {id(row): a["split"] for row, a in zip(rows, assigned, strict=True)}
         for row in missing:
-            row["split"] = assigned[str(row.get("tweet_id"))]
+            row["split"] = by_identity[id(row)]
 
     if split is not None:
         if split not in VALID_SPLITS:

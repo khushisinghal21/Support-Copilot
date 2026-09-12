@@ -81,12 +81,73 @@ PII_SOLICITATION_PATTERN = re.compile(
 #
 # The TLD is required to be >= 2 alphabetic characters, which keeps version
 # strings ("iOS 17.4.1"), decimals and "e.g." out of the match.
+# The scheme-less branch had two defects, both found by adversarial review
+# round 2.
+#
+# 1. FALSE POSITIVES ON MISSING SPACES AFTER A FULL STOP. "Let us know how it
+#    goes.Thanks for your patience" yielded the "URL" `goes.Thanks`, which is not
+#    whitelisted, so an entirely ordinary reply was escalated as
+#    UNAUTHORIZED_URL. A missing space after a period is one of the most common
+#    things in real support copy, so this was not a rare edge. Requiring the TLD
+#    to come from a fixed list of real TLDs removes the class: `Thanks` and `We`
+#    are not TLDs.
+#
+# 2. QUADRATIC BACKTRACKING (ReDoS). `[a-z0-9](?:[a-z0-9-]*[a-z0-9])?` is
+#    ambiguous about where the inner group starts and stops, so a long
+#    hyphen-run with no dot made the engine try every split. Measured on the old
+#    pattern: 16KB of "a-a-a-..." took 1.08s and 100KB took ~47s, in a guardrail
+#    that runs on a public HTTP endpoint. The rewrite bounds each label with a
+#    single quantifier ({0,62}, the DNS label limit), so work per start position
+#    is capped and total time is linear in input length.
+#
+# THREE DEFECTS, THREE ROUNDS. This pattern's history, because the shape of the
+# mistake matters more than the current regex:
+#
+#   r1  matched only "https?://..." plus three hardcoded Apple hosts, so
+#       "appleid-verify.com/unlock" extracted NOTHING and the whitelist was
+#       bypassed by omitting the scheme. Fixed by adding a scheme-less branch.
+#   r2  that branch matched any dotted token, so "how it goes.Thanks" extracted
+#       "goes.Thanks" and escalated ordinary support copy; and its nested
+#       quantifier backtracked quadratically (100KB -> ~47s). Fixed by bounding
+#       the label and requiring a TLD from a list.
+#   r3  both halves of the r2 fix were wrong in the same way -- too clever by
+#       half, and claimed more than they did:
+#
+#       (a) THE REDOS WAS NOT FIXED, only moved. Bounding the label left the
+#           OUTER `(?:label\.)+` unbounded, so a dotted payload still backtracks
+#           over every label count at every start position. Measured on the r2
+#           pattern: 4000 chars of "a." -> 1.42s, 16KB -> 20.5s, 32KB -> 83.6s.
+#           Worse, the r2 regression test asserted linearity using ONLY
+#           "a-" * 50000 -- the single shape the rewrite did fix -- so the suite
+#           certified a property the pattern did not have. Both the label and the
+#           repetition are bounded now, and the test parametrises over all three
+#           payload shapes.
+#
+#       (b) THE TLD LIST CREATED A PHISHING HOLE. A listed TLD that is a PREFIX
+#           of an unlisted one matched, then failed its trailing \b:
+#           "support.apple.company/verify-now" tried "com", hit "pany", and
+#           extracted NOTHING -- so validate_urls() never consulted the
+#           whitelist and a far more convincing phish than anything in the r2
+#           notes shipped clean. Same for .community, .network, .delivery,
+#           .services, .coop. Fixed by matching a generic TLD shape and
+#           REJECTING sentence-boundary matches instead of enumerating TLDs: the
+#           thing that distinguishes "goes.Thanks" from a domain is not its TLD,
+#           it is that a scheme-less domain in real copy carries a path, a www.,
+#           or a known Apple host. Requiring one of those removes the false
+#           positives without an allowlist that can be prefix-matched.
+#
+# Residual limit, stated: a scheme-less bare domain with no path and no www.
+# ("go to appleid-verify.net") is not extracted. The whitelist still covers every
+# scheme-ful URL and every scheme-less one with a path, which is what a phishing
+# link needs in order to land the victim anywhere useful.
 URL_EXTRACTOR = re.compile(
     r"https?://\S+"
-    r"|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(?:/\S*)?",
+    # www.host[/path] -- www. is itself the signal that this is a hostname
+    r"|www\.(?:[a-z0-9][a-z0-9-]{0,62}\.){0,6}[a-z]{2,24}(?:/\S*)?"
+    # host/path -- the path is what distinguishes a domain from a full stop
+    r"|(?:[a-z0-9][a-z0-9-]{0,62}\.){1,6}[a-z]{2,24}/\S*",
     re.IGNORECASE,
 )
-
 _STOPWORDS = {
     "the",
     "a",

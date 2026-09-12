@@ -13,7 +13,19 @@ import re
 # ---------------------------------------------------------------------------
 # PII detection
 # ---------------------------------------------------------------------------
-EMAIL_REGEX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+# The domain part is bounded per label rather than written as one open
+# `[A-Za-z0-9.-]+\.`, which was quadratic: the character class includes the dot,
+# so the engine retried every split of a long dotted run. Measured on the old
+# pattern with a payload of "a." repeated -- 16KB took 0.245s and 64KB took
+# 3.60s, and unlike URL_EXTRACTOR this one runs on RAW CUSTOMER TEXT in triage
+# gate 3 and again in check_pii_echo. The HTTP layer caps bodies at 4000 chars,
+# but `src/cli.py` and the eval harness construct TweetInput directly and bypass
+# that cap entirely, so the bound has to be in the pattern. Found by adversarial
+# review round 3.
+#
+# Also dropped the stray "|" inside `[A-Z|a-z]`, which made the literal pipe a
+# valid TLD character.
+EMAIL_REGEX = re.compile(r"\b[A-Za-z0-9._%+-]{1,64}@(?:[A-Za-z0-9-]{1,63}\.){1,8}[A-Za-z]{2,24}\b")
 
 # International-ish phone matcher: requires phone-like separators (space,
 # dash, dot, or parens) so it doesn't fire on bare digit runs like a support
@@ -33,14 +45,55 @@ EMAIL_REGEX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 PHONE_REGEX = re.compile(
     r"(?<!\d)(?:\+\d{1,3}[-.\s])?(?:\(\d{2,4}\)[-.\s]?)?\d{2,4}[-.\s]\d{3,4}[-.\s]\d{3,4}(?!\d)"
     r"|(?<![\d+])\+?\d{10,11}(?!\d)"
+    # "+919876543210" -- a country code plus a 10-digit national number is 12-13
+    # digits, so the 10/11-digit branch above could not match it and round 3
+    # auto-handled a customer's phone number, which the draft then read back. The
+    # explicit leading "+" is what keeps this from colliding with the 12-digit
+    # support case number "#100310750365" that the original audit fixed: that one
+    # has no plus sign.
+    r"|(?<!\d)\+\d{1,3}\d{9,11}(?!\d)"
 )
+# Separator-free branches constrained to real issuer prefixes, so an IMEI is not
+# reported as a credit card (round 2) -- but with the issuer ranges actually
+# right, which the first version of this was not.
+#
+# WHAT ROUND 3 FOUND WRONG WITH THE FIRST VERSION
+# -----------------------------------------------
+# The comment claimed "Covered: ... JCB (35), Diners (36/38)" and DECISION_LOG 32
+# repeated it. Diners Club / Carte Blanche PANs are FOURTEEN digits; the branch
+# was `3[68]\d{14}`, i.e. sixteen. So the pattern matched no real Diners card and
+# missed every one -- while the disclosure said the only gap was issuers outside
+# the list. A customer tweeting a live Diners PAN was auto-handled, and
+# check_pii_echo (which reuses these patterns) then let the draft republish it.
+# Also missed: 13- and 19-digit Visa, the 644-649 Discover range, and any
+# separator that is not ASCII space or hyphen -- iOS and macOS substitute an en
+# dash for a typed hyphen by default, so "4111-1111-1111-1111" typed on a Mac
+# arrives as U+2013 and matched nothing.
+#
+# REMAINING LIMIT, stated: the 16-digit `35` JCB range overlaps IMEI-SV (an IMEI
+# plus a 2-digit software version, on the same `35` TAC prefixes), so issuer
+# prefixes cannot separate those two at that length. JCB is narrowed to its real
+# 3528-3589 range, which excludes most IMEI TACs but not all; a 16-digit number
+# in that range is reported as a card, and that reason code can be wrong. Keeping
+# the detection and disclosing the mislabel is the right way round here -- the
+# alternative drops a real card class.
+_CARD_SEP = r"[-\s‐-―]"
 CREDIT_CARD_REGEX = re.compile(
-    r"\b(?:\d{4}[-\s]){3}\d{4}\b"  # 4-4-4-4 with separators
-    r"|(?<!\d)\d{16}(?!\d)"  # bare 16-digit PAN
-    r"|(?<!\d)\d{15}(?!\d)"  # bare 15-digit (Amex)
-    r"|\b\d{4}[-\s]\d{6}[-\s]\d{5}\b"  # Amex 4-6-5 grouping
+    rf"\b(?:\d{{4}}{_CARD_SEP}){{3}}\d{{4}}\b"  # 4-4-4-4 with separators
+    rf"|\b\d{{4}}{_CARD_SEP}\d{{6}}{_CARD_SEP}\d{{5}}\b"  # Amex 4-6-5
+    rf"|\b\d{{4}}{_CARD_SEP}\d{{6}}{_CARD_SEP}\d{{4}}\b"  # Diners 4-6-4
+    # Separator-free, by issuer range:
+    r"|(?<!\d)4\d{12}(?:\d{3})?(?:\d{3})?(?!\d)"  # Visa 13/16/19
+    r"|(?<!\d)5[1-5]\d{14}(?!\d)"  # Mastercard
+    r"|(?<!\d)2(?:22[1-9]|2[3-9]\d|[3-6]\d\d|7[01]\d|720)\d{12}(?!\d)"  # Mastercard 2-series
+    r"|(?<!\d)3[47]\d{13}(?!\d)"  # Amex (15)
+    r"|(?<!\d)6(?:011|5\d\d|4[4-9]\d)\d{12}(?!\d)"  # Discover
+    r"|(?<!\d)35(?:2[89]|[3-8]\d)\d{12}(?!\d)"  # JCB 3528-3589
+    r"|(?<!\d)3(?:0[0-5]|[68]\d)\d{11}(?!\d)"  # Diners / Carte Blanche (14)
 )
-SSN_REGEX = re.compile(r"\b\d{3}[-\s]\d{2}[-\s]\d{4}\b")
+# Dots added after round 3 auto-handled "my ssn is 123.45.6789". The separator
+# is cosmetic; the disclosure is not.
+SSN_REGEX = re.compile(r"\b\d{3}[-.\s\u2010-\u2015]\d{2}[-.\s\u2010-\u2015]\d{4}\b")
 
 # ---------------------------------------------------------------------------
 # Negation guard: scan a short window before a match for a negator. Kills the
@@ -53,47 +106,105 @@ NEGATION_WORDS = re.compile(
 )
 
 
-# A negator only negates within its own clause. Without this, the 20-character
-# lookback treats the "No" in "No joke, my iPhone battery is swollen" as negating
-# the hazard -- so the single highest-severity gate in the system was disabled by
-# the most natural emphasis a frightened customer uses. Found by a red-team pass;
-# it is a false NEGATIVE on a lithium-fire report, not a style issue.
+# NEGATION, THIRD AND FINAL SHAPE
+# -------------------------------
+# The first three versions of this logic were window heuristics, and each was
+# broken by ordinary English in the next review round:
+#
+#   v1  a 20-char lookback. "No joke, my iPhone battery is swollen" read as a
+#       denial -- the highest-severity gate in the system disabled by the most
+#       natural emphasis a frightened customer uses.
+#   v2  truncate the lookback at the nearest clause boundary. Round 2 deleted the
+#       comma and the identical bypass returned.
+#   v3  blank a closed list of emphatic idioms. Round 3 typed "No joking" instead
+#       of "No joke" and the identical bypass returned again. Measured end to end:
+#       "No joking my iPhone battery is swollen" -> AUTO_HANDLE, answered with a
+#       troubleshooting reply.
+#
+# Three rounds, one defect, because all three asked a question with no correct
+# answer: "is there a negation word somewhere near the hazard?" Every idiom list
+# has a next inflection. Round 3 also produced
+#   "My iPhone battery is not just warm, it's swollen"
+#   "My iPad battery is no longer flat, it's swollen"
+#   "My MacBook battery has never been this swollen"
+#   "My iPhone has no case and the battery is swollen"
+# all CLEAN, none of which any idiom list reaches.
+#
+# The question that does have a correct answer is structural: does the negator
+# attach to the HAZARD WORD? In English a negator negates the predicate it
+# immediately precedes. "is not swollen" is a denial; in "not just warm, it's
+# swollen" the "not" attaches to "warm". So: take the last negator at or before
+# the hazard, and treat it as a denial only if nothing but copulas and
+# intensifying adverbs separate the two.
+#
+# This subsumes every case the idiom list existed for, without an idiom list: in
+# "No joke my battery is swollen" the words "joke my battery is" sit between "No"
+# and "swollen", so "No" cannot attach to it. Same for "No joking", "I shit you
+# not", and phrasings nobody has thought of yet -- which is the property all
+# three previous versions lacked.
+# What may stand between a negator and the hazard word without breaking the
+# attachment. Two groups, for two different reasons.
+#
+# COPULAS AND INTENSIFIERS: "is not swollen", "is not really swollen",
+# "was never visibly swollen" are all denials.
+#
+# HAZARD VOCABULARY: the matched span ENDS with the hazard phrase, and those
+# phrases are not all one word -- "on fire", "caught fire", "too hot to touch",
+# "electric shock". Those tokens are listed here so the attachment test can see
+# past them, rather than trying to guess how many trailing words to ignore.
+# Guessing was tried first: stripping up to four trailing tokens also ate the
+# real content in "my battery no joke is swollen", turning a hazard report back
+# into a denial. Naming the vocabulary cannot make that mistake.
+#
+# Deliberately ABSENT, because these are the words that distinguish a denial from
+# an emphasis: "just" ("not just warm, it's swollen"), "this" ("never been this
+# swollen"), "longer" ("no longer flat, it's swollen"), every possessive, and all
+# punctuation. That is what makes the rule hold without an idiom list.
+NEGATION_FILLER = re.compile(
+    r"^(?:\s|\b(?:"
+    # copulas, auxiliaries, intensifiers
+    r"is|are|am|was|were|be|been|being|get|gets|got|getting|look|looks|looking|"
+    r"seem|seems|feel|feels|smell|smells|really|actually|very|that|so|too|even|yet|quite|"
+    r"particularly|noticeably|visibly|currently|still|at|all|a|an|the|"
+    # hazard-phrase vocabulary, so multi-word hazards do not read as content
+    r"on|catch|catches|caught|fire|smoke|smoking|smoky|swoll\w*|swell\w*|bulg\w*|expand\w*|"
+    r"puff\w*|burn\w*|melt\w*|scorch\w*|charred|explod\w*|shock\w*|electrocut\w*|hot|touch|"
+    r"hold|to|leak\w*|warp\w*|spark\w*|overheat\w*|hiss\w*|pop\w*|crackl\w*|shatter\w*|"
+    r"smash\w*|damage|damaged|wet|submerged|soaked"
+    r")\b)*$",
+    re.IGNORECASE,
+)
+
+# Retained for the PII/legal matchers below, which match short single spans where
+# clause-level truncation is the right rule.
 CLAUSE_BOUNDARY = re.compile(r"[,;:\u2014\u2013-]|\b(but|however|though|although)\b", re.IGNORECASE)
 
 
 def _is_negated(text: str, match_start: int, match_end: int | None = None, window: int = 20) -> bool:
-    """Returns True if a negation word appears either in the `window`
-    characters immediately preceding the match, or *inside* the match span
-    itself.
+    """True when a negator structurally attaches to the matched hazard.
 
-    The hazard patterns below match a device-noun-to-hazard-word span as a
-    single regex match (e.g. "battery is NOT swollen" matches starting at
-    "battery" and ending at "swollen"), so a negation word sitting between
-    the noun and the hazard word -- the most natural place for one to be in
-    English -- falls *inside* the match, not before it. Checking only the
-    text before match_start (the original version of this function) misses
-    exactly that case and would have let "my battery is NOT swollen"
-    escalate identically to a genuine report. Checking the match span too
-    fixes it without needing a real parser.
+    `window` is how far before the match to look for a negator, kept for
+    call-site compatibility. What changed is the test applied once one is found
+    (see the comment above): a negator counts only when everything between it and
+    the hazard word is copula or intensifier, so "battery is not swollen" is a
+    denial while "battery is not just warm, it's swollen" is not.
     """
-    lookback = text[max(0, match_start - window) : match_start]
+    end = match_end if match_end is not None else match_start
+    region_start = max(0, match_start - window)
+    region = text[region_start:end]
 
-    # A negator only negates inside its own clause. Truncate the lookback at the
-    # LAST clause boundary before the match, so "No joke, my iPhone battery is
-    # swollen" and "I'm not kidding, my battery is swollen" are not read as
-    # denials. Before this, that emphatic prefix disabled the highest-severity
-    # gate in the system -- a false negative on a lithium-fire report, found by a
-    # red-team pass. "my battery is NOT swollen" has no boundary between the
-    # negator and the hazard, so it still suppresses correctly.
-    boundaries = list(CLAUSE_BOUNDARY.finditer(lookback))
-    if boundaries:
-        lookback = lookback[boundaries[-1].end() :]
+    last = None
+    for m in NEGATION_WORDS.finditer(region):
+        last = m
+    if last is None:
+        return False
 
-    if NEGATION_WORDS.search(lookback):
-        return True
-    if match_end is not None and NEGATION_WORDS.search(text[match_start:match_end]):
-        return True
-    return False
+    # Everything between the negator and the END of the match -- hazard word
+    # included, since NEGATION_FILLER knows the hazard vocabulary. If all of it is
+    # copula, intensifier or hazard word, the negator attaches to the hazard and
+    # this is a denial. One substantive word in between and it does not.
+    between = region[last.end() :]
+    return bool(NEGATION_FILLER.match(between))
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +215,7 @@ def _is_negated(text: str, match_start: int, match_end: int | None = None, windo
 # similar); a hazard now requires the word to appear near a device noun or in
 # an explicit fire/smoke/spark/shock context.
 BATTERY_HAZARD_REGEX = re.compile(
-    r"\b(battery|phone|device|macbook|ipad|iphone|watch|case)\b[^.!?]{0,25}\b"
+    r"\b(battery|phone|device|macbook|ipad|iphone|watch|case)\b[^.!?]{0,60}\b"
     r"(swoll\w*|swell\w*|bulg\w*|expand\w*|puff(ed|ing)?)\b"
     r"|\b(swollen|bulging|expanding|puffy)\s+(battery|device|phone|case)\b"
     r"|\b(smoke|smoking)\b(?!\s*(-|\s)?free)"
@@ -114,18 +225,54 @@ BATTERY_HAZARD_REGEX = re.compile(
     r"|\bspark(s|ed|ing)?\b[^.!?]{0,25}\b(charg\w*|port|outlet|plug\w*|cable|adapter|brick)\b"
     r"|\b(explod\w*)\b"
     r"|\bburning (smell|plastic smell)\b"
+    # The reverse ordering, which is how people actually say it. Round 3:
+    # "my iphone smells like burning plastic" -> CLEAN, answered with a
+    # troubleshooting reply. A burning-plastic smell from a sealed lithium device
+    # is a thermal-runaway signal; it is not a wording edge case.
+    r"|\bsmell(s|ing|ed|t)?\b[^.!?]{0,25}\b(burn\w*|smoke|smoky|acrid|chemical)\b"
+    r"|\bsmells? burnt\b"
     r"|\b(shocked|electric shock|electrocut\w*)\b"
     # Everything below was auto-handled before a red-team pass: a reported
     # third-degree burn, a device too hot to hold, a melted mains adapter and a
     # leaking cell all got a troubleshooting reply.
     r"|\bburn(ed|t|ing)?\b[^.!?]{0,30}\b(hand|finger|skin|leg|lap|blister)\b"
     r"|\b(hand|finger|skin|leg|lap)\b[^.!?]{0,20}\bburn(ed|t|ing)?\b"
-    r"|\boverheat\w*\b"
+    # "overheat" ALONE was a hazard here, which made "My MacBook overheats when I
+    # run Final Cut Pro" -- the single most common Mac complaint there is -- an
+    # ESCALATE at risk_score 1.0 under reason code HARDWARE_PHYSICAL_DAMAGE. That
+    # is both a false positive and a false *label*: a thermal-throttling
+    # complaint is not physical damage. Confirmed by adversarial review round 2.
+    #
+    # It now needs one corroborating severity signal in the same clause. This is a
+    # deliberate recall-for-precision trade, recorded in docs/DECISION_LOG.md: a
+    # bare "it overheats" no longer escalates here, and instead takes the normal
+    # path where the frustration gate and the output guardrails still apply. The
+    # corroboration list is kept wide on purpose -- anything suggesting heat that
+    # has left the realm of slow-fan-noise still fires.
+    # The corroboration list is the round-2 precision trade (DECISION_LOG 31).
+    # Round 3 showed the first version of the list was far narrower than decision
+    # 31 claimed: it carried `swoll\w*` but not bulging, warping, expanding,
+    # leaking or the one-word spelling "shutdown", so
+    #   "My iPhone is overheating and there is a bulge in the back"
+    #   "phone overheating, it just shutdown by itself"
+    #   "My iPhone overheats, the back panel has warped"
+    #   "iphone overheating so bad I cannot hold it"
+    # were all CLEAN -- and "overheating AND bulging" is the textbook
+    # pre-failure presentation of a swelling lithium cell, exactly the case the
+    # trade was not supposed to cost. The window is 80 rather than 40 because a
+    # normal English clause between the two ("overheats so badly that the
+    # aluminium chassis has started to melt") is longer than 40 characters.
+    r"|\boverheat\w*\b[^.!?]{0,80}\b(burn\w*|hot to (the )?(touch|hold)|cannot hold|can'?t hold|"
+    r"smell\w*|smok\w*|melt\w*|scorch\w*|charred|blister\w*|bulg\w*|swoll\w*|swell\w*|expand\w*|"
+    r"puff\w*|warp\w*|leak\w*|hiss\w*|pop(ping|ped)?|crackl\w*|red mark|painful|"
+    r"shut ?(s|ting)? ?(itself )?(down|off)|shutdown|won'?t turn on|unsafe|danger\w*)\b"
+    r"|\b(burn\w*|hot to (the )?(touch|hold)|smell\w*|smok\w*|melt\w*|scorch\w*|charred|blister\w*|"
+    r"bulg\w*|swoll\w*|warp\w*|unsafe|danger\w*)\b[^.!?]{0,80}\boverheat\w*\b"
     r"|\btoo hot to (touch|hold)\b"
     r"|\b(melt(ed|ing)?|scorch\w*|charred)\b[^.!?]{0,30}"
     r"\b(charger|brick|adapter|cable|port|outlet|phone|device|battery|macbook|ipad|iphone)\b"
     r"|\b(charger|brick|adapter|cable|port|outlet)\b[^.!?]{0,20}\b(melt(ed|ing)?|scorch\w*)\b"
-    r"|\b(battery|device|phone|ipad|iphone|macbook)\b[^.!?]{0,25}\b(leak\w*|warp\w*)\b"
+    r"|\b(battery|device|phone|ipad|iphone|macbook)\b[^.!?]{0,60}\b(leak\w*|warp\w*)\b"
     r"|\bleak\w*\b[^.!?]{0,20}\b(fluid|liquid|acid|battery)\b",
     re.IGNORECASE,
 )
@@ -155,7 +302,21 @@ HUMAN_REQUEST_REGEX = re.compile(
     r"|\b(want|need)\s+(to\s+)?(speak|talk)\s+(to|with)\s+(a\s+)?(human|person|agent|representative|manager)\b"
     r"|\breal human\b"
     r"|\bstop\s+(this\s+|the\s+|with\s+this\s+)?(automated\s+)?(bot|robot)\b"
-    r"|\bnot a bot\b|\bhate bots\b|\bactual human\b",
+    r"|\bnot a bot\b|\bhate bots\b|\bactual human\b"
+    # Every branch above requires a speak/talk/connect/transfer/put verb, so
+    # round 3 got "Get me a human, now.", "I want a human to look at this." and
+    # "Can you escalate this to a supervisor?" all auto-handled. "supervisor" and
+    # "someone (who actually works) at Apple" were absent from the noun list
+    # entirely. A customer asking for a person is the least ambiguous escalation
+    # signal this system receives; it should not depend on which verb they chose.
+    r"|\b(get|give|find)\s+(me|us)\s+(an?\s+|the\s+)?(human|person|real person|agent|representative|"
+    r"advisor|operator|manager|supervisor)\b"
+    r"|\b(want|need)\s+(an?\s+|the\s+)?(human|person|real person|agent|representative|advisor|"
+    r"operator|manager|supervisor)\b"
+    r"|\bescalate\s+(this|it|my\s+\w+)?\s*(to\s+)?(an?\s+|the\s+)?(human|person|agent|representative|"
+    r"advisor|manager|supervisor|someone)\b"
+    r"|\b(speak|talk)\s+(to|with)\s+(someone|somebody)\b"
+    r"|\bsomeone\s+who\s+(actually\s+)?works\s+at\b",
     re.IGNORECASE,
 )
 
@@ -176,7 +337,23 @@ PROMPT_INJECTION_REGEX = re.compile(
     # straight through. Requiring the noun "instructions"/"rules" is what keeps
     # ordinary language out: "please ignore my previous tweet" still does not
     # match, and neither does "can you forget my old Apple ID".
-    r"\b(?:ignore|disregard|forget|override)\s+(?:(?:your|all|previous|earlier|the\s+above|any)\s+)*(?:instructions|rules|prompt)\b"
+    # Round 3 walked five phrasings straight through this, all of which DO carry
+    # the required noun (so they are not the documented no-noun xfail):
+    #   "Ignore all PRIOR instructions ..."        -- "prior" was not a qualifier
+    #   "Ignore THE INSTRUCTIONS ABOVE ..."        -- "above" was only accepted
+    #                                                 before the noun, never after
+    #   "Forget THE RULES ..."                     -- bare "the" was not a qualifier
+    #   "Ignore previous INSTRUCTION ..."          -- the noun had to be plural
+    #   "Your new INSTRUCTIONS ARE TO ..."         -- no imperative verb at all
+    # "ignore all prior instructions" is plausibly the single most common
+    # phrasing in the wild. The qualifier set is widened, the noun is allowed in
+    # the singular, a trailing "above"/"in this thread" is accepted, and the
+    # verbless possessive form gets its own branch.
+    r"\b(?:ignore|disregard|forget|override|bypass)\s+"
+    r"(?:(?:your|all|any|previous|prior|earlier|preceding|former|original|the|those|these|above)\s+)*"
+    r"(?:instruction|instructions|rule|rules|prompt|prompts|guideline|guidelines|directive|directives)"
+    r"(?:\s+(?:above|before|so\s+far|in\s+this\s+thread))?\b"
+    r"|\b(?:your|the)\s+new\s+(?:instruction|instructions|rule|rules|directive|directives)\s+(?:are|is)\b"
     r"|\bdisregard\s+(?:(?:all|previous|the\s+above|safety)\s+)*rules\b"
     # A fake system turn. Attackers prefix a line with a role label to make the
     # model treat injected text as privileged instruction rather than customer
