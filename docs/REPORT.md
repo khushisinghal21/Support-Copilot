@@ -46,7 +46,7 @@ than being hidden behind a hardcoded "+" prefix.
 | **Missed Escalations (Safety Risk)** | 21 / 21 | 14 / 21 | **1 / 21** | **+13 fewer missed** |
 | **ROUGE-L Grounding Score** | 0.1572 | 0.1465 | **0.2045** | **+0.0580** |
 | **LLM Judge Quality (1-5 Scale)** | 4.3 / 5.0 | 4.0 / 5.0 | **4.1 / 5.0** | **+0.1** |
-| **P95 Latency (CPU)** | < 1 ms (unmeasured estimate) | ~5 ms (unmeasured estimate) | **36.7 ms** | Real-time ready |
+| **P95 Latency (CPU)** | < 1 ms (unmeasured estimate) | ~5 ms (unmeasured estimate) | **57.4 ms** | Real-time ready |
 
 ---
 
@@ -231,9 +231,9 @@ Two **over-triggers** are also asserted rather than tuned away, because for a sa
 
 ---
 
-## 7. Decision Log (First 15 of 35 Non-Obvious Engineering Decisions)
+## 7. Decision Log (First 15 of 43 Non-Obvious Engineering Decisions)
 
-*The 15 below are the original design decisions. Decisions 16-26 (the hardening pass) and 27-35 (three rounds of adversarial review, including every false claim those rounds found in this very document) are in [`DECISION_LOG.md`](DECISION_LOG.md) and are not duplicated here. This heading said "15 Non-Obvious Engineering Decisions" while the log held 35, so a reader of the report alone saw none of the 20 entries that record what was found broken.*
+*The 15 below are the original design decisions. Decisions 16-26 (the hardening pass) and 27-43 (three rounds of adversarial review, including every false claim those rounds found in this very document) are in [`DECISION_LOG.md`](DECISION_LOG.md) and are not duplicated here. This heading said "15 Non-Obvious Engineering Decisions" while the log held 43, so a reader of the report alone saw none of the 28 entries that record what was found broken.*
 
 1. **Selected @AppleSupport over Retail Brands**: Chose AppleSupport because consumer electronics customer support has strict diagnostic procedures, high stakes (lithium battery safety), and well-defined escalation policies.
 2. **Embedded Vector Store (ChromaDB) over Hosted SaaS**: Opted for in-process SQLite ChromaDB to ensure the evaluation harness runs offline in <15 minutes with zero external infrastructure setup.

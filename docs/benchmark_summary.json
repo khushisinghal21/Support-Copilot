@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T03:08:01.152211+00:00",
+  "generated_at": "2026-09-12T07:52:51.264042+00:00",
   "golden_set": {
     "n": 188,
     "n_edge": 38,
@@ -123,6 +123,6 @@
     "num_samples": 50
   },
   "latency_ms": {
-    "p95_production": 36.67
+    "p95_production": 57.43
   }
 }

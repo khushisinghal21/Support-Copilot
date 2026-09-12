@@ -9,6 +9,31 @@ from src.config import GEMINI_API_KEY, GEMINI_MODEL_NAME
 
 logger = logging.getLogger(__name__)
 
+# Same reason as the counters in src/drafting/generator.py: the report's
+# "Judge mode" banner was derived from whether GEMINI_API_KEY was set, which says
+# nothing about whether the API answered. A keyed run against an exhausted quota
+# published "the scores below come from real model calls" while every verdict came
+# from the keyword rubric. Counted, so the banner can state the outcome.
+JUDGE_CALLS_SUCCEEDED = 0
+JUDGE_CALLS_FELL_BACK = 0
+
+
+def reset_judge_counters() -> None:
+    """Zeroes the run counters. Call once before a batch."""
+    global JUDGE_CALLS_SUCCEEDED, JUDGE_CALLS_FELL_BACK
+    JUDGE_CALLS_SUCCEEDED = 0
+    JUDGE_CALLS_FELL_BACK = 0
+
+
+def judge_call_stats() -> dict[str, int]:
+    """{succeeded, fell_back, attempted} for the current run."""
+    return {
+        "succeeded": JUDGE_CALLS_SUCCEEDED,
+        "fell_back": JUDGE_CALLS_FELL_BACK,
+        "attempted": JUDGE_CALLS_SUCCEEDED + JUDGE_CALLS_FELL_BACK,
+    }
+
+
 JUDGE_SYSTEM_PROMPT = """You are an expert Quality Assurance Judge for Apple Customer Support.
 You evaluate support replies drafted by an AI agent on a 1 to 5 scale across 3 criteria:
 1. Groundedness (1-5): Does the reply give accurate, factually sound advice grounded in official Apple procedures?
@@ -130,9 +155,19 @@ class LLMJudge:
                     data = json.loads(text)
                     overall = round((data["groundedness"] + data["tone"] + data["safety"]) / 3.0, 2)
                     data["overall"] = overall
+                    global JUDGE_CALLS_SUCCEEDED
+                    JUDGE_CALLS_SUCCEEDED += 1
                     return data
             except Exception as e:
                 logger.warning(f"LLM judge call failed: {e}. Using deterministic fallback judge.")
+
+        # Reaching here with a configured client means the live call did not
+        # produce a verdict. Counted only in that case: a keyless run is already
+        # described as deterministic, and counting it as a "fallback" would
+        # conflate "not configured" with "configured and failing".
+        if self._llm is not None:
+            global JUDGE_CALLS_FELL_BACK
+            JUDGE_CALLS_FELL_BACK += 1
 
         # 3. Deterministic calibrated judge fallback
         # Groundedness: 5 if official Apple domain link included, 4 if valid troubleshooting without link, 3 if vague

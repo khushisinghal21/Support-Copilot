@@ -9,9 +9,10 @@ from rich.panel import Panel
 from rich.table import Table
 
 from src.config import BENCHMARK_SUMMARY_JSON_PATH, REPORT_OUTPUT_PATH, TARGET_BRAND
+from src.drafting.generator import reset_llm_counters
 from src.eval.failure_analysis import mine_failure_modes
 from src.eval.human_agreement import compute_human_judge_agreement
-from src.eval.judge import LLMJudge
+from src.eval.judge import LLMJudge, reset_judge_counters
 from src.eval.metrics import compute_intent_metrics, compute_rouge_similarity, compute_triage_metrics
 from src.eval.report_generator import _abbreviate_labels, generate_markdown_report, write_benchmark_summary_json
 from src.eval.splits import CALIBRATION, HELDOUT, load_golden_rows, split_counts
@@ -46,6 +47,13 @@ def run(
 ):
     """Executes the complete benchmark evaluation comparing Proposed System against 2 Baselines."""
     start_total = time.perf_counter()
+    # Zero the LLM-call counters so the report's judge-mode banner describes THIS
+    # run. Without the reset a second run in the same process would inherit the
+    # first run's successes and under-report degradation -- which is the failure
+    # the counters exist to prevent, so it is reset explicitly rather than relying
+    # on module import order.
+    reset_llm_counters()
+    reset_judge_counters()
     counts = split_counts()
     heldout_rows = load_golden_dataset(split=HELDOUT)
     calibration_rows = load_golden_dataset(split=CALIBRATION)

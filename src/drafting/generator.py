@@ -10,6 +10,43 @@ from src.models import RetrievalResult
 
 logger = logging.getLogger(__name__)
 
+# WHY THESE COUNTERS EXIST
+# ------------------------
+# docs/REPORT.md used to decide its "Judge mode" banner from whether
+# GEMINI_API_KEY was *set*. A run with a key present but the API refusing every
+# call -- an exhausted free-tier quota returning 429 RESOURCE_EXHAUSTED, which is
+# the single most likely way this degrades -- therefore published
+# "Judge mode: live LLM ... the scores below come from real model calls" while
+# every draft was in fact a retrieved template.
+#
+# That is the same defect class as the leaked corpus and the pre-leak-fix
+# grounding rates: a report asserting a measurement it did not make. It was
+# introduced BY the fix for that class, which checked configuration instead of
+# outcome. Found when an exhausted quota on a real machine produced the
+# condition a fourth review round would have looked for.
+#
+# Module-level rather than per-instance because the eval harness builds
+# generators per row; the report needs the run total. reset_llm_counters() is
+# called once at the start of a run.
+LLM_CALLS_SUCCEEDED = 0
+LLM_CALLS_FELL_BACK = 0
+
+
+def reset_llm_counters() -> None:
+    """Zeroes the run counters. Call once before a batch."""
+    global LLM_CALLS_SUCCEEDED, LLM_CALLS_FELL_BACK
+    LLM_CALLS_SUCCEEDED = 0
+    LLM_CALLS_FELL_BACK = 0
+
+
+def llm_call_stats() -> dict[str, int]:
+    """{succeeded, fell_back, attempted} for the current run."""
+    return {
+        "succeeded": LLM_CALLS_SUCCEEDED,
+        "fell_back": LLM_CALLS_FELL_BACK,
+        "attempted": LLM_CALLS_SUCCEEDED + LLM_CALLS_FELL_BACK,
+    }
+
 
 class GroundedReplyGenerator:
     """Generates customer support replies grounded in historical brand resolutions."""
@@ -146,6 +183,17 @@ class GroundedReplyGenerator:
                         )
             except Exception as e:
                 logger.warning(f"LLM generation failed: {e}. Using retrieved historical template.")
+
+        # Record what actually happened, for the report's judge-mode banner. Only
+        # counted when an LLM was configured at all -- a keyless run is already
+        # correctly described as deterministic, and counting it as a "fallback"
+        # would conflate "not configured" with "configured and failing".
+        if self._llm is not None:
+            global LLM_CALLS_SUCCEEDED, LLM_CALLS_FELL_BACK
+            if generated_text:
+                LLM_CALLS_SUCCEEDED += 1
+            else:
+                LLM_CALLS_FELL_BACK += 1
 
         # Fallback to top retrieved historical resolution snippet if LLM not available or failed
         if not generated_text:

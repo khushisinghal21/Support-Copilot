@@ -238,6 +238,101 @@ def _grounding_mode_section() -> tuple[str, str]:
     return "\n".join(rows), choice
 
 
+def _judge_mode_note() -> str:
+    """The report's judge-mode banner, describing what the run DID rather than how
+    it was configured.
+
+    WHY THIS IS A FUNCTION
+    ----------------------
+    So the tests exercise THIS code rather than a copy of its branch logic. Not
+    pedantry: a round-3 finding was a regression test that asserted linearity
+    using a single payload shape and therefore certified a property the pattern
+    did not have. A test that reimplements a branch can pass while the branch it
+    claims to describe does something else.
+
+    WHY IT NO LONGER READS `if GEMINI_API_KEY:`
+    -------------------------------------------
+    The first version of this banner existed to fix a real dishonesty defect: the
+    report quoted "LLM Judge Quality 4.08" with no indication that on a keyless
+    run the judge is keyword matching and the generator returns a retrieved
+    snippet. But it decided by asking whether a key EXISTS, which says nothing
+    about whether the API answered.
+
+    A key can exist while every call fails. An exhausted Gemini free-tier quota
+    returns `429 RESOURCE_EXHAUSTED` on each request; the generator logs a warning
+    and falls back to the retrieved template; the run completes normally. The
+    report then published:
+
+        > **Judge mode: live LLM.** `GEMINI_API_KEY` was set for this run, so the
+        > scores below come from real model calls.
+
+    while not one draft had been produced by a model. That is the same defect
+    class as the leaked corpus and the pre-leak-fix grounding rates -- a report
+    asserting a measurement it did not make -- and it was introduced BY the fix
+    for that class, because the fix checked configuration instead of outcome.
+
+    Found when a real machine's free-tier quota ran out mid-run, which is the
+    condition a fourth review round would have constructed on purpose.
+    """
+    from src.drafting.generator import llm_call_stats
+    from src.eval.judge import judge_call_stats
+
+    gen = llm_call_stats()
+    jud = judge_call_stats()
+    gen_fb, jud_fb = gen["fell_back"], jud["fell_back"]
+
+    if not GEMINI_API_KEY:
+        return (
+            "> **Judge mode: DETERMINISTIC FALLBACK -- read the judge numbers accordingly.** No `GEMINI_API_KEY` was "
+            "set for this run, so `src/eval/judge.py` scored replies with its keyword rubric and "
+            "`src/drafting/generator.py` returned a retrieved snippet instead of a generated draft. Every "
+            "judge-derived figure in this report therefore measures a rubric against canned text, **not** an LLM "
+            "judging model output, and must not be quoted as an LLM-graded result. The corroborating signal: the "
+            "judge scores the trivial canned baseline ABOVE the production system, which is what a measure carrying "
+            "no information looks like."
+        )
+
+    if gen["attempted"] + jud["attempted"] == 0:
+        return (
+            "> **Judge mode: not determined for this run.** `GEMINI_API_KEY` is set, but this report was generated "
+            "without the generator or judge call counters being populated, so it cannot state whether real model "
+            "calls were made. Re-run `python -m src.eval.runner` end to end rather than trusting the judge rows "
+            "below."
+        )
+
+    if gen_fb == 0 and jud_fb == 0:
+        return (
+            f"> **Judge mode: live LLM.** `GEMINI_API_KEY` was set and every model call succeeded "
+            f"({gen['succeeded']} generation, {jud['succeeded']} judge), so the scores below come from real model "
+            f"calls."
+        )
+
+    if gen["succeeded"] == 0 and jud["succeeded"] == 0:
+        return (
+            f"> **Judge mode: DETERMINISTIC FALLBACK, despite a key being set -- read the judge numbers "
+            f"accordingly.** `GEMINI_API_KEY` is configured, but **every** model call failed "
+            f"({gen_fb}/{gen['attempted']} generation, {jud_fb}/{jud['attempted']} judge) and fell back to the "
+            f"retrieved template and the keyword rubric. The usual cause is an exhausted API quota "
+            f"(`429 RESOURCE_EXHAUSTED`) -- check this run's WARNING lines. Every judge-derived figure below "
+            f"therefore measures a rubric against canned text, **not** an LLM judging model output, and must not be "
+            f"quoted as an LLM-graded result. Intent, triage, escalation-recall and latency figures do **not** "
+            f"depend on the API and are unaffected."
+        )
+
+    gen_pct = 100.0 * gen_fb / gen["attempted"] if gen["attempted"] else 0.0
+    jud_pct = 100.0 * jud_fb / jud["attempted"] if jud["attempted"] else 0.0
+    return (
+        f"> **Judge mode: PARTIALLY DEGRADED -- the judge rows below are a mixture.** `GEMINI_API_KEY` is set and "
+        f"some calls succeeded, but **{gen_fb} of {gen['attempted']} generation calls ({gen_pct:.0f}%)** and "
+        f"**{jud_fb} of {jud['attempted']} judge calls ({jud_pct:.0f}%)** failed and fell back to the retrieved "
+        f"template / keyword rubric. The usual cause is an exhausted API quota (`429 RESOURCE_EXHAUSTED`) -- check "
+        f"this run's WARNING lines. A mixed population is worse than either pure one for comparison, because the "
+        f"fallback share differs between systems and between runs: do not compare these judge figures against "
+        f"another run's. Intent, triage, escalation-recall and latency figures do **not** depend on the API and are "
+        f"unaffected."
+    )
+
+
 def generate_markdown_report(
     trivial_metrics: dict[str, Any],
     simple_metrics: dict[str, Any],
@@ -252,26 +347,7 @@ def generate_markdown_report(
 
     gs = _golden_set_stats()
 
-    # Whether a real LLM was actually called. Without this the report quotes
-    # "LLM Judge Quality 4.3 / 4.0 / 4.1" with no indication that, on a run with
-    # no API key, the judge is keyword matching and the generator returns a
-    # retrieved snippet -- so those rows describe a rubric scoring canned text,
-    # not an LLM judging generated replies. Found by adversarial review.
-    if GEMINI_API_KEY:
-        judge_mode_note = (
-            "> **Judge mode: live LLM.** `GEMINI_API_KEY` was set for this run, so the scores below come from real "
-            "model calls."
-        )
-    else:
-        judge_mode_note = (
-            "> **Judge mode: DETERMINISTIC FALLBACK -- read the judge numbers accordingly.** No `GEMINI_API_KEY` was "
-            "set for this run, so `src/eval/judge.py` scored replies with its keyword rubric and "
-            "`src/drafting/generator.py` returned a retrieved snippet instead of a generated draft. Every "
-            "judge-derived figure in this report therefore measures a rubric against canned text, **not** an LLM "
-            "judging model output, and must not be quoted as an LLM-graded result. The corroborating signal: the "
-            "judge scores the trivial canned baseline ABOVE the production system, which is what a measure carrying "
-            "no information looks like."
-        )
+    judge_mode_note = _judge_mode_note()
 
     # Interval on the safety metric. n is small enough that the point estimate
     # alone is misleading -- quoting 90.5% to one decimal off 21 events implies a
