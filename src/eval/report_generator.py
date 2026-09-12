@@ -218,16 +218,16 @@ def _grounding_mode_section() -> tuple[str, str]:
         f"{lexical['false_positive_rate_pct']}% for the lexical check, a {reduction:.0f}% reduction at identical "
         f"probe accuracy.\n\n"
         f"**These are not the numbers an earlier version of this section reported.** It claimed 18.6% / 9.6% / 33.0% "
-        f"and said the chosen floor \"halves\" the false-positive rate. Those measurements were taken before the RAG "
+        f'and said the chosen floor "halves" the false-positive rate. Those measurements were taken before the RAG '
         f"leakage guard was repaired, against a corpus that still contained this evaluation set's own reference "
         f"replies -- so every reply retrieved itself, grounding similarity was ~1.0 by construction, and all three "
         f"rates were floored far below the truth. Recomputed on the clean corpus they are the table above. The "
-        f"*direction* of the conclusion survives; the magnitude does not, and \"halves\" was wrong. Both the old and "
+        f'*direction* of the conclusion survives; the magnitude does not, and "halves" was wrong. Both the old and '
         f"new figures are left visible here because a silently-corrected number teaches a reader nothing.\n\n"
         f"Equal probe scores also hide that the two checks fail on *different* cases: the lexical check returns a "
-        f"grounding score of **1.00** for the truncated fragment `\"We'd like to\"` (its no-content-words branch "
-        f"short-circuits to \"fine\"), while the embedding check scores that ~0.00; conversely the lexical check "
-        f"catches a draft recommending a full OS reinstall against a \"force restart\" snippet, which the embedding "
+        f'grounding score of **1.00** for the truncated fragment `"We\'d like to"` (its no-content-words branch '
+        f'short-circuits to "fine"), while the embedding check scores that ~0.00; conversely the lexical check '
+        f'catches a draft recommending a full OS reinstall against a "force restart" snippet, which the embedding '
         f"check passes.\n\n"
         f"**The 7/7 row is a trap, and is listed to show why it was rejected.** A 0.65 floor scores perfectly on the "
         f"seven probes -- but those probes were hand-written, and fitting a threshold to them is the same error as "
@@ -548,9 +548,9 @@ def generate_markdown_report(
             f"customer as a question.\n\n"
             f"   Full confusion (true->predicted): {_rows}\n\n"
             f"   **This was undisclosed until adversarial review round 3 computed it.** Three documents stated that "
-            f"the `CLARIFY` path was \"covered by unit tests only, not by this benchmark\" -- true of the *label*, "
+            f'the `CLARIFY` path was "covered by unit tests only, not by this benchmark" -- true of the *label*, '
             f"and misleading about the *gate*, which this benchmark fires {_false_clarify} times and which is wrong "
-            f"every time it fires here. Decision 10 claims `CLARIFY` \"reduces pressure on the binary gate\"; on "
+            f'every time it fires here. Decision 10 claims `CLARIFY` "reduces pressure on the binary gate"; on '
             f"this evaluation it is the single largest source of triage error. The gate's confidence band is the "
             f"thing to re-examine, and that is not done in this pass."
         )

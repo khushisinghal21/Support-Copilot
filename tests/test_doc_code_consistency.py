@@ -195,8 +195,7 @@ def test_report_discloses_the_false_clarify_rate():
     report = (REPO_ROOT / "docs" / "REPORT.md").read_text(encoding="utf-8")
     assert "CLARIFY" in report
     assert "False `CLARIFY`" in report or "false `CLARIFY`" in report, (
-        "REPORT.md section 5 no longer discloses the false-CLARIFY rate. "
-        "Regenerate it: python -m src.eval.runner"
+        "REPORT.md section 5 no longer discloses the false-CLARIFY rate. Regenerate it: python -m src.eval.runner"
     )
 
 
@@ -232,6 +231,4 @@ def test_ci_installs_the_dev_tools_from_the_declared_file():
     """
     ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "requirements-dev.txt" in ci, "CI does not install the pinned dev tooling"
-    assert "pip install ruff mypy" not in ci, (
-        "CI is installing dev tools unpinned again; use requirements-dev.txt"
-    )
+    assert "pip install ruff mypy" not in ci, "CI is installing dev tools unpinned again; use requirements-dev.txt"

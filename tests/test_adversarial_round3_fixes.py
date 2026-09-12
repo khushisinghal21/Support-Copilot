@@ -402,10 +402,23 @@ def test_failure_mode_title_describes_the_pair_its_count_belongs_to():
     times; `count` was the whole category while `title` came from one arbitrary
     example. The mitigation then told the reader to add prototypes "for this
     specific pair"."""
-    failures = (
-        [{"true_intent": "A", "pred_intent": "B", "true_triage": "AUTO_HANDLE", "pred_triage": "AUTO_HANDLE", "text": "x"}] * 6
-        + [{"true_intent": "C", "pred_intent": "D", "true_triage": "AUTO_HANDLE", "pred_triage": "AUTO_HANDLE", "text": "y"}] * 3
-    )
+    failures = [
+        {
+            "true_intent": "A",
+            "pred_intent": "B",
+            "true_triage": "AUTO_HANDLE",
+            "pred_triage": "AUTO_HANDLE",
+            "text": "x",
+        }
+    ] * 6 + [
+        {
+            "true_intent": "C",
+            "pred_intent": "D",
+            "true_triage": "AUTO_HANDLE",
+            "pred_triage": "AUTO_HANDLE",
+            "text": "y",
+        }
+    ] * 3
     modes = mine_failure_modes(failures)
     assert "between A and B" in modes[0]["title"], modes[0]["title"]
     assert modes[0]["dominant_pair_count"] == 6

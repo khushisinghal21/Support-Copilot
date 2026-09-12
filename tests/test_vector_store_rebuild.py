@@ -56,9 +56,7 @@ def _build_a_pre_fix_index(path: str) -> int:
     collection.upsert(
         ids=[r["tweet_id"] for r in rows],
         documents=[r["customer_text"] for r in rows],
-        metadatas=[
-            {"agent_reply": r["agent_reply"], "intent": heuristic_intent(r["customer_text"])} for r in rows
-        ],
+        metadatas=[{"agent_reply": r["agent_reply"], "intent": heuristic_intent(r["customer_text"])} for r in rows],
         embeddings=[v.tolist() for v in vectors],
     )
     return collection.count()
@@ -77,9 +75,7 @@ def test_a_pre_fix_index_is_detected_and_rebuilt(tmp_path, caplog):
     indexed = store.collection.get(include=["documents", "metadatas"])
     leaked_ids = set(indexed["ids"]) & excluded_ids
     leaked_texts = [d for d in indexed["documents"] if (d or "").strip() in excluded_texts]
-    leaked_replies = [
-        m for m in indexed["metadatas"] if (m.get("agent_reply") or "").strip() in excluded_replies
-    ]
+    leaked_replies = [m for m in indexed["metadatas"] if (m.get("agent_reply") or "").strip() in excluded_replies]
 
     assert leaked_ids == set(), f"{len(leaked_ids)} excluded source ids survived the rebuild"
     assert leaked_texts == [], f"{len(leaked_texts)} golden customer texts survived the rebuild"

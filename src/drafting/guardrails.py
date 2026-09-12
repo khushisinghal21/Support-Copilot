@@ -91,6 +91,7 @@ def link_check_outcomes() -> dict[str, int]:
     """{status: count} for the current run, e.g. {"ok": 12, "broken": 30}."""
     return dict(LINK_CHECK_OUTCOMES)
 
+
 # Allowed official Apple domain prefixes and Twitter official link wrapper (t.co)
 WHITELISTED_URL_PATTERN = re.compile(
     r"^https?://(apple\.co|support\.apple\.com|iforgot\.apple\.com|reportaproblem\.apple\.com|t\.co)/",

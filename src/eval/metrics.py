@@ -78,17 +78,13 @@ def compute_triage_metrics(y_true: list[str], y_pred: list[str]) -> dict[str, An
         # is wrong every time it fires. Computed here so it cannot go unreported
         # again.
         "confusion": {
-            f"{yt}->{yp}": sum(
-                1 for a, b in zip(y_true, y_pred, strict=False) if a == yt and b == yp
-            )
+            f"{yt}->{yp}": sum(1 for a, b in zip(y_true, y_pred, strict=False) if a == yt and b == yp)
             for yt in sorted(set(y_true) | set(y_pred))
             for yp in sorted(set(y_true) | set(y_pred))
             if sum(1 for a, b in zip(y_true, y_pred, strict=False) if a == yt and b == yp)
         },
         "false_clarify_count": sum(
-            1
-            for yt, yp in zip(y_true, y_pred, strict=False)
-            if yp == "CLARIFY" and yt != "CLARIFY"
+            1 for yt, yp in zip(y_true, y_pred, strict=False) if yp == "CLARIFY" and yt != "CLARIFY"
         ),
     }
 

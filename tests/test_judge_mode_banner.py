@@ -141,7 +141,7 @@ def test_the_generator_counts_a_fallback_when_the_api_refuses(monkeypatch, caplo
 
 
 def test_a_keyless_generator_does_not_count_as_a_fallback():
-    """"Not configured" and "configured and failing" are different facts, and
+    """ "Not configured" and "configured and failing" are different facts, and
     conflating them would make a keyless run look like a degraded keyed one."""
     gen = generator_module.GroundedReplyGenerator(api_key="")
     assert gen._llm is None
