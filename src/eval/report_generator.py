@@ -1,10 +1,19 @@
 """Generates the comprehensive benchmark report docs/REPORT.md (Deliverable 4 & 5)."""
 
+import inspect
 import json
 from datetime import UTC, datetime
 from typing import Any
 
-from src.config import BENCHMARK_SUMMARY_JSON_PATH, GEMINI_API_KEY, GOLDEN_SET_PATH, REPORT_OUTPUT_PATH, TARGET_BRAND
+from src.config import (
+    BENCHMARK_SUMMARY_JSON_PATH,
+    GEMINI_API_KEY,
+    GOLDEN_SET_PATH,
+    KAGGLE_PAIRS_PATH,
+    PROJECT_ROOT,
+    REPORT_OUTPUT_PATH,
+    TARGET_BRAND,
+)
 
 
 def _fmt_kappa(k) -> str:
@@ -114,9 +123,15 @@ def _golden_set_stats() -> dict[str, Any]:
         n_escalate_authored = sum(1 for r in escalations if r.get("source") == "authored_adversarial")
         n_escalate_real = n_escalate - n_escalate_authored
         pct_escalate_authored = round(100 * n_escalate_authored / n_escalate) if n_escalate else 0
-        # Real base rate measured during golden-set construction: ~9 escalation
-        # worthy tweets per 995 sampled (data/README.md).
-        enrichment_x = round((n_escalate / n) / (9 / 995)) if n else 0
+        # Real base rate, against the REVIEWED count rather than the first-pass
+        # regex's candidate count. data/README.md records that all 9 candidates
+        # were hand-reviewed and only 2 survived as genuine escalations; dividing
+        # by 9/995 therefore used the number the review existed to correct, and
+        # understated the enrichment by more than 4x. Both ratios are reported so
+        # the reader can see the range the estimate sits in. Found by adversarial
+        # review round 3.
+        enrichment_x = round((n_escalate / n) / (2 / 995)) if n else 0
+        enrichment_x_candidates = round((n_escalate / n) / (9 / 995)) if n else 0
         return {
             "n": n,
             "n_edge": n_edge,
@@ -124,6 +139,7 @@ def _golden_set_stats() -> dict[str, Any]:
             "n_escalate": n_escalate,
             "pct_escalate": pct_escalate,
             "enrichment_x": enrichment_x,
+            "enrichment_x_candidates": enrichment_x_candidates,
             "n_escalate_authored": n_escalate_authored,
             "n_escalate_real": n_escalate_real,
             "pct_escalate_authored": pct_escalate_authored,
@@ -136,10 +152,90 @@ def _golden_set_stats() -> dict[str, Any]:
             "n_escalate": 0,
             "pct_escalate": 0,
             "enrichment_x": 0,
+            "enrichment_x_candidates": 0,
             "n_escalate_authored": 0,
             "n_escalate_real": 0,
             "pct_escalate_authored": 0,
         }
+
+
+def _grounding_mode_section() -> tuple[str, str]:
+    """Renders section 5b's comparison table and its 'what was chosen' sentence
+    from the measured file, or an explicit gap notice when it is absent.
+
+    Returns (table_markdown, choice_paragraph). The choice paragraph is generated
+    rather than written out because its central claim -- that the embedding check
+    at 0.30 has a lower false-positive rate than the lexical check at 0.12 -- is a
+    claim about numbers, and the previous hand-written version of it ("halves the
+    false-positive rate") survived unchanged after the numbers it described had
+    been invalidated.
+    """
+    path = PROJECT_ROOT / "docs" / "grounding_modes.json"
+    if not path.exists():
+        notice = (
+            "*(Not measured for this run: `docs/grounding_modes.json` is absent. "
+            "Run `python scripts/measure_grounding_modes.py` to produce it. "
+            "No rates are quoted here rather than quoting stale ones.)*"
+        )
+        return notice, notice
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    by_key = {(m["mode"], float(m["floor"])): m for m in data["modes"]}
+    lexical = by_key[("lexical", 0.12)]
+    embed_30 = by_key[("embedding", 0.30)]
+    embed_65 = by_key[("embedding", 0.65)]
+    n = data["population_n"]
+
+    rows = [
+        f"| Check | Probe verdicts correct | False-positive rate on {n} real agent replies |",
+        "| :--- | :---: | :---: |",
+        f"| Lexical overlap, floor 0.12 | 5 / 7 | **{lexical['false_positive_rate_pct']}%** "
+        f"({lexical['flagged']}/{lexical['n']}) |",
+        f"| Embedding cosine, floor 0.30 | 5 / 7 | **{embed_30['false_positive_rate_pct']}%** "
+        f"({embed_30['flagged']}/{embed_30['n']}) |",
+        f"| Embedding cosine, floor 0.65 | 7 / 7 | **{embed_65['false_positive_rate_pct']}%** "
+        f"({embed_65['flagged']}/{embed_65['n']}) |",
+        "",
+        f"*Measured {data['generated_at']} by `scripts/measure_grounding_modes.py` against the "
+        f"post-leakage-fix corpus. The probe column is a fixed seven-draft set and is not regenerated.*",
+    ]
+
+    reduction = (
+        (lexical["false_positive_rate_pct"] - embed_30["false_positive_rate_pct"])
+        / lexical["false_positive_rate_pct"]
+        * 100.0
+        if lexical["false_positive_rate_pct"]
+        else 0.0
+    )
+    ratio = (
+        embed_65["false_positive_rate_pct"] / embed_30["false_positive_rate_pct"]
+        if embed_30["false_positive_rate_pct"]
+        else 0.0
+    )
+    choice = (
+        f"**What was chosen and why.** Embedding similarity at a 0.30 floor: "
+        f"{embed_30['false_positive_rate_pct']}% of genuine historical replies wrongly flagged versus "
+        f"{lexical['false_positive_rate_pct']}% for the lexical check, a {reduction:.0f}% reduction at identical "
+        f"probe accuracy.\n\n"
+        f"**These are not the numbers an earlier version of this section reported.** It claimed 18.6% / 9.6% / 33.0% "
+        f"and said the chosen floor \"halves\" the false-positive rate. Those measurements were taken before the RAG "
+        f"leakage guard was repaired, against a corpus that still contained this evaluation set's own reference "
+        f"replies -- so every reply retrieved itself, grounding similarity was ~1.0 by construction, and all three "
+        f"rates were floored far below the truth. Recomputed on the clean corpus they are the table above. The "
+        f"*direction* of the conclusion survives; the magnitude does not, and \"halves\" was wrong. Both the old and "
+        f"new figures are left visible here because a silently-corrected number teaches a reader nothing.\n\n"
+        f"Equal probe scores also hide that the two checks fail on *different* cases: the lexical check returns a "
+        f"grounding score of **1.00** for the truncated fragment `\"We'd like to\"` (its no-content-words branch "
+        f"short-circuits to \"fine\"), while the embedding check scores that ~0.00; conversely the lexical check "
+        f"catches a draft recommending a full OS reinstall against a \"force restart\" snippet, which the embedding "
+        f"check passes.\n\n"
+        f"**The 7/7 row is a trap, and is listed to show why it was rejected.** A 0.65 floor scores perfectly on the "
+        f"seven probes -- but those probes were hand-written, and fitting a threshold to them is the same error as "
+        f"tuning thresholds on the evaluation set (item 7 above). Measured against real replies, that floor wrongly "
+        f"escalates **{embed_65['false_positive_rate_pct']}%** of genuine historical answers -- {ratio:.1f}x the "
+        f"chosen floor's rate. That is not a trade worth making to close one class of catch."
+    )
+    return "\n".join(rows), choice
 
 
 def generate_markdown_report(
@@ -245,6 +341,100 @@ def generate_markdown_report(
             "here. Re-run `python -m src.eval.runner` to produce a report with it.)*"
         )
 
+    # Section 5b's false-positive rates used to be typed into the template below
+    # as literals: 18.6 / 9.6 / 33.0. They were real measurements -- of a corpus
+    # that still contained the golden set's own reference replies, because they
+    # were taken before the RAG leakage guard was repaired. Every reply retrieved
+    # itself, similarity was ~1.0 by construction, and the rates described the
+    # leak rather than the checks. A real measurement of the wrong thing is the
+    # most dangerous number to leave in a report, because nothing about it looks
+    # wrong.
+    #
+    # They now come from docs/grounding_modes.json, written by
+    # scripts/measure_grounding_modes.py, so re-running the measurement refreshes
+    # the report and a missing file degrades to a visible gap rather than to a
+    # stale literal. Found by adversarial review round 2.
+    grounding_table, grounding_choice = _grounding_mode_section()
+
+    # Read from the class rather than typed into the template. Section 7 claimed
+    # T=0.12 while the classifier's default has been 0.08; the doc/code drift
+    # guard only parsed DECISION_LOG.md, so a wrong constant inside this
+    # generated report was invisible to it. Imported lazily because report
+    # generation must not pull in torch just to print a number.
+    from src.intent.classifier import SemanticCentroidClassifier
+
+    classifier_temperature = inspect.signature(SemanticCentroidClassifier.__init__).parameters["temperature"].default
+
+    # Section 2 said "the exact same 188-sample hand-labelled Golden Set" while
+    # the harness had been reporting on the held-out rows only ever since the
+    # split landed -- a sentence describing the world before the change it sits
+    # underneath. All three architectures are still scored on the *same* rows as
+    # each other, which is the claim that makes the comparison valid; the row
+    # count was the part that was wrong. Found by adversarial review round 2.
+    _heldout_n = (split_info or {}).get("heldout_n")
+    heldout_for_leak = _heldout_n or gs["n"]
+
+    # Section 5's new item 3. Generated, because its whole point is that the
+    # numbers were never looked at.
+    _tri = prod_metrics["triage"]
+    _conf = _tri.get("confusion") or {}
+    _n_eval = sum(_conf.values()) or 1
+    _false_clarify = _tri.get("false_clarify_count", 0)
+    _errors = _n_eval - sum(v for k, v in _conf.items() if k.split("->")[0] == k.split("->")[1])
+    _auto_true = sum(v for k, v in _conf.items() if k.startswith("AUTO_HANDLE->")) or 1
+    if _conf:
+        _rows = " ".join(f"`{k}` {v}." for k, v in sorted(_conf.items(), key=lambda kv: -kv[1]))
+        clarify_disclosure = (
+            f"Triage accuracy is {_tri['accuracy'] * 100:.1f}% and sections below attribute that to over-escalation. "
+            f"The confusion says otherwise. Of {_errors} triage errors on {_n_eval} rows, "
+            f"**{_false_clarify} are the system answering with a clarifying question instead of a reply** "
+            f"(`AUTO_HANDLE` or `ESCALATE` predicted as `CLARIFY`), against "
+            f"{_tri['false_escalation_count']} false escalations and "
+            f"{_tri['missed_escalation_count']} missed escalation"
+            f"{'' if _tri['missed_escalation_count'] == 1 else 's'}. "
+            f"That is {100 * _false_clarify / _auto_true:.0f}% of all genuine `AUTO_HANDLE` traffic sent back to the "
+            f"customer as a question.\n\n"
+            f"   Full confusion (true->predicted): {_rows}\n\n"
+            f"   **This was undisclosed until adversarial review round 3 computed it.** Three documents stated that "
+            f"the `CLARIFY` path was \"covered by unit tests only, not by this benchmark\" -- true of the *label*, "
+            f"and misleading about the *gate*, which this benchmark fires {_false_clarify} times and which is wrong "
+            f"every time it fires here. Decision 10 claims `CLARIFY` \"reduces pressure on the binary gate\"; on "
+            f"this evaluation it is the single largest source of triage error. The gate's confidence band is the "
+            f"thing to re-examine, and that is not done in this pass."
+        )
+    else:
+        clarify_disclosure = "*(Triage confusion not available for this run.)*"
+
+    # The leakage guard's real cost, measured rather than typed. The literal this
+    # replaces said "removes 121 rows from an 800-row corpus", which was wrong
+    # twice over: 121 was the count for one of three keys over the first 800 lines
+    # of a 1000-line file, and because load_real_corpus() stops at max_records
+    # ACCEPTED records, later rows backfill and the indexed corpus is unchanged.
+    # So the guard costs no corpus size at all. Found by adversarial review round 3.
+    from src.config import RAG_CORPUS_MAX_RECORDS
+    from src.drafting import vector_store as _vs
+
+    corpus_cap = RAG_CORPUS_MAX_RECORDS
+    try:
+        corpus_file_rows = sum(1 for line in open(KAGGLE_PAIRS_PATH, encoding="utf-8") if line.strip())
+    except OSError:
+        corpus_file_rows = 0
+    if _vs.LAST_CORPUS_SKIPPED is None:
+        _vs.load_real_corpus()
+    corpus_guard_cost = (
+        f"It skips **{_vs.LAST_CORPUS_SKIPPED}** of the rows it scans, and the indexed corpus is "
+        f"still **{_vs.LAST_CORPUS_SIZE}** records: the loader stops at {corpus_cap} *accepted* rows, "
+        f"so later rows backfill and the guard costs no corpus size."
+        if _vs.LAST_CORPUS_SKIPPED is not None
+        else "(Skip count not measured for this run.)"
+    )
+    evaluated_population = (
+        f"the same **{_heldout_n} held-out rows** of the {gs['n']}-sample hand-labelled Golden Set "
+        f"(the remaining {gs['n'] - _heldout_n} are the calibration split -- see item 7 of section 5)"
+        if _heldout_n
+        else f"the exact same {gs['n']}-sample hand-labelled Golden Set"
+    )
+
     # The Production column of the headline table used to hardcode
     # "< 35 ms" regardless of what any run actually measured -- once
     # write_benchmark_summary_json started recording the real P95 (see its
@@ -288,7 +478,7 @@ For Apple Support on Twitter, "good" does not mean simply generating fluent Engl
 
 ## 2. Headline Results vs. Two Baselines
 
-We evaluated three architectures across the exact same {gs["n"]}-sample hand-labelled Golden Set:
+We evaluated three architectures across {evaluated_population}:
 1. **Baseline 1 (Trivial)**: Majority-class intent predictor (`OS_SOFTWARE_TROUBLESHOOTING`), static canned reply (*"Please restart your device"*), and always `AUTO_HANDLE`.
 2. **Baseline 2 (Simple)**: TF-IDF + Logistic Regression intent classifier, nearest-neighbor historical reply retrieval without LLM re-ranking or length guardrails, and basic keyword escalation.
 3. **Proposed System (Production)**: Dense semantic centroid classifier (`all-MiniLM-L6-v2`), ChromaDB historical resolution RAG, 280-char/whitelist guardrails, and cascading triage policy engine.
@@ -370,19 +560,29 @@ Even with strong headline metrics, a thorough engineering audit requires identif
 
 While our **Macro-F1 of {prod_metrics["intent"]["macro_f1"]:.4f}** and **Triage Accuracy of {prod_metrics["triage"]["accuracy"] * 100:.1f}%** may look strong in isolation, headline numbers conceal subtle real-world failure patterns -- and, per Section 3, the human-agreement kappa on the judge itself is currently weak, which should temper confidence in any of the judge-derived numbers above:
 
-1. **The Golden Set's Escalation Rate Is Deliberately ~20x the Real Rate**:
-   Of the {gs["n_escalate"]} true-ESCALATE rows in this {gs["n"]}-row golden set (~{gs["pct_escalate"]}%, about **{gs["enrichment_x"]}x** the real base rate), **{gs["n_escalate_authored"]} of {gs["n_escalate"]} ({gs["pct_escalate_authored"]}%) were authored by the author rather than found in real traffic**; only {gs["n_escalate_real"]} are real tweets. That matters more than the enrichment ratio: the hazard, PII and injection regexes were written by the same person against these same phrasings, so escalation recall is substantially a self-consistency check. Escalation examples were authored as adversarial cases (`source: authored_adversarial` in `data/golden_eval_set.jsonl`) -- because an unweighted random sample of the real Kaggle pairs surfaced only ~9 genuine escalation-worthy tweets out of 995 (well under 1%). This oversampling was a deliberate, disclosed choice (see `data/README.md`) to get enough escalation examples to measure precision/recall at all -- but it means Escalation Recall/Precision above describe performance on an escalation-enriched sample, not the real-world base rate. On real unfiltered traffic, the same false-escalation rules would fire far less often in absolute terms, and the cost of a single missed escalation (safety-relevant) is not comparable to the cost of a single false one (ticket volume) -- a blended "Triage Accuracy" number hides that asymmetry entirely.
+1. **The Golden Set's Escalation Rate Is Deliberately ~{gs["enrichment_x"]}x the Real Rate**:
+   Of the {gs["n_escalate"]} true-ESCALATE rows in this {gs["n"]}-row golden set (~{gs["pct_escalate"]}%, about **{gs["enrichment_x"]}x** the reviewed real base rate, or {gs["enrichment_x_candidates"]}x the first-pass candidate rate -- see below), **{gs["n_escalate_authored"]} of {gs["n_escalate"]} ({gs["pct_escalate_authored"]}%) were authored by the author rather than found in real traffic**; only {gs["n_escalate_real"]} are real tweets. That matters more than the enrichment ratio: the hazard, PII and injection regexes were written by the same person against these same phrasings, so escalation recall is substantially a self-consistency check. Escalation examples were authored as adversarial cases (`source: authored_adversarial` in `data/golden_eval_set.jsonl`) -- because an unweighted random sample of the real Kaggle pairs surfaced only 9 *candidate* escalation-worthy tweets out of 995 -- and hand review (`data/README.md`) rejected 7 of those, leaving **2 genuine escalations in 995 tweets**, about 0.2%. The enrichment figure above uses the reviewed count; an earlier version of this section divided by the unreviewed candidate count of 9, which understated the enrichment by more than 4x while citing the very review that corrects it. Found by adversarial review round 3. This oversampling was a deliberate, disclosed choice (see `data/README.md`) to get enough escalation examples to measure precision/recall at all -- but it means Escalation Recall/Precision above describe performance on an escalation-enriched sample, not the real-world base rate. On real unfiltered traffic, the same false-escalation rules would fire far less often in absolute terms, and the cost of a single missed escalation (safety-relevant) is not comparable to the cost of a single false one (ticket volume) -- a blended "Triage Accuracy" number hides that asymmetry entirely.
 
 2. **Isolated Single-Turn Evaluation**:
    Our evaluation measures single-turn tweet resolution. Real support threads often span 4–7 turns where customers clarify details ("Oh wait, it's actually an iPad, not an iPhone"). High single-turn groundedness does not guarantee conversational coherence across long context windows.
 
-3. **Conservative Over-Escalation Bias**:
+3. **The Largest Single Triage Error Class Is Not Over-Escalation -- It Is False `CLARIFY`**:
+   {clarify_disclosure}
+
+4. **Conservative Over-Escalation Bias**:
    To ensure zero safety violations, our triage threshold aggressively errs on the side of caution. While this achieves a near-perfect Missed Escalation Rate ({prod_metrics["triage"]["missed_escalation_count"]} missed safety cases), it inflates human agent ticket volume by ~{prod_metrics["triage"]["false_escalation_count"]} false escalations. In an enterprise setting, this increases operational cost.
 
-4. **Kaggle Dataset Age & Link Rot**:
+5. **Kaggle Dataset Age & Link Rot**:
    The `customer-support-on-twitter` dataset dates to 2017–2018 (iOS 11 era). References to `apple.co` URLs and specific iOS menu hierarchies may have evolved (e.g., Settings layouts in iOS 17/18). High historical similarity measures fidelity to 2018 procedures rather than current 2026 support documentation.
 
-5. **Until This Run, The Thresholds Were Tuned On The Evaluation Set**:
+6. **Until This Run, The Evaluation Could Retrieve Its Own Answer Key**:
+   `docs/DECISION_LOG.md` #15 claimed that every golden-set `source_tweet_id` was excluded from the RAG corpus, "so the system can never retrieve its own answer key during evaluation". `README.md`, this report and `CLAUDE.md` repeated it. **It was false for the entire life of the project.** The guard compared `kaggle_kaggle_187962_187961` (the golden set's doubled id, produced by a prefix bug in `scripts/finalize_golden_set.py`) against `kaggle_187962_187961` (the corpus id). Those strings can never be equal, so the guard excluded **0 rows** — and a test asserted it worked by checking only that both sets were non-empty.
+
+   Measured consequence: the indexed corpus was the first {corpus_cap} rows of the {corpus_file_rows}-row source file, and sitting in it were **123 of the 162** distinct golden reference replies — so **80 of the {heldout_for_leak} held-out rows could retrieve, verbatim, the exact reply they were being scored against**. Any grounding or ROUGE-L figure published before this run was inflated by an unknown amount in that direction. *(An earlier draft of this item said 157/162 and 105/124. Those are the whole-file figures; the index only ever held the first {corpus_cap} rows, so they overstated what the evaluation could actually reach. Corrected here rather than quietly — the smaller number is still a broken measurement.)*
+
+   Now excluded on three independent keys (collapsed id, exact customer text, exact agent reply). {corpus_guard_cost} The guard logs a warning when it excludes nothing — because "excluded nothing" and "working perfectly" had been indistinguishable in the logs. A second round found that the repair did not apply to vector indexes that already existed on disk (`data/chroma_db` survives a `git pull`), leaving 153 golden replies retrievable on any pre-existing install; the index is now fingerprinted and rebuilt on mismatch. **Both the finding and the incomplete first fix are recorded in `docs/ADVERSARIAL_REVIEW.md` with reproductions.**
+
+7. **Until This Run, The Thresholds Were Tuned On The Evaluation Set**:
    `scripts/calibrate_thresholds.py` swept `MIN_INTENT_CONFIDENCE` and `MIN_RETRIEVAL_SIMILARITY` against the golden set, and this harness then reported headline numbers on *those same rows* -- with no train/test separation anywhere in the repo. `docs/AUDIT_AND_FIX_PLAN.md` §7.10 records that sweep being run and both thresholds being changed on the strength of it (`MIN_RETRIEVAL_SIMILARITY` 0.40 → 0.20, `MIN_INTENT_CONFIDENCE` 0.35 → 0.40). Every triage number published before this run was therefore optimistically biased by construction, and none of the four caveats above disclosed it.
    {split_disclosure}
 
@@ -392,17 +592,11 @@ While our **Macro-F1 of {prod_metrics["intent"]["macro_f1"]:.4f}** and **Triage 
 
 `docs/DECISION_LOG.md` #14 recorded that the grounding guardrail's bag-of-words overlap check was a fallback from when the embedding model could not be loaded in the development environment. It can be now, so both were implemented and measured against each other rather than the newer one simply being assumed better.
 
-**Method.** Two populations. (a) Seven hand-authored probe drafts against one retrieved snippet, labelled by whether the snippet actually *supports* the draft's claim. (b) All 188 golden-set reference replies -- real historical `@AppleSupport` agent replies -- each scored against what the retriever returns for its own row. Population (b) is grounded by construction, so anything a check flags there is a false positive.
+**Method.** Two populations. (a) Seven hand-authored probe drafts against one retrieved snippet, labelled by whether the snippet actually *supports* the draft's claim. (b) Every golden-set reference reply -- real historical `@AppleSupport` agent replies -- each scored against what the retriever returns for its own row. Population (b) is grounded by construction, so anything a check flags there is a false positive. This measures false positives only; it says nothing about how often either check catches a genuinely ungrounded draft, and must not be read as accuracy.
 
-| Check | Probe verdicts correct | False-positive rate on 188 real agent replies |
-| :--- | :---: | :---: |
-| Lexical overlap, floor 0.12 | 5 / 7 | **18.6%** |
-| Embedding cosine, floor 0.30 | 5 / 7 | **9.6%** |
-| Embedding cosine, floor 0.65 | 7 / 7 | **33.0%** |
+{grounding_table}
 
-**What was chosen and why.** Embedding similarity at a 0.30 floor, which halves the false-positive rate on genuine replies (9.6% vs 18.6%) at identical probe accuracy. Equal probe scores hide that the two checks fail on *different* cases: the lexical check returns a grounding score of **1.00** for the truncated fragment `"We'd like to"` (its no-content-words branch short-circuits to "fine"), while the embedding check scores that ~0.00; conversely the lexical check catches a draft recommending a full OS reinstall against a "force restart" snippet, which the embedding check passes.
-
-**The 7/7 row is a trap, and is listed to show why it was rejected.** A 0.65 floor scores perfectly on the seven probes -- but those probes were hand-written, and fitting a threshold to them is the same error as tuning thresholds on the evaluation set (item 5 above). Measured against real replies, that floor would wrongly escalate a third of genuine historical answers. A 3.4x increase in false escalations to close one class of catch is not a trade worth making.
+{grounding_choice}
 
 **Known limitation, stated plainly.** Similarity is not entailment. At the chosen floor, a draft giving *different but topically related* advice than the retrieved snippet still passes (0.64), and so does one that recycles the snippet's vocabulary into an invented claim (0.42). Neither check detects unsupported-but-on-topic assertions, because neither is a model of support. The honest fix is a natural-language-inference model scoring whether the snippet entails the draft; that is a larger change than this pass, and is not pretended to be solved here. `tests/test_grounding_modes.py` asserts the blind spot explicitly so it cannot close or widen unnoticed.
 
@@ -440,12 +634,14 @@ Two **over-triggers** are also asserted rather than tuned away, because for a sa
 
 ---
 
-## 7. Decision Log (15 Non-Obvious Engineering Decisions)
+## 7. Decision Log (First 15 of 43 Non-Obvious Engineering Decisions)
+
+*The 15 below are the original design decisions. Decisions 16-26 (the hardening pass) and 27-43 (three rounds of adversarial review, including every false claim those rounds found in this very document) are in [`DECISION_LOG.md`](DECISION_LOG.md) and are not duplicated here. This heading said "15 Non-Obvious Engineering Decisions" while the log held 43, so a reader of the report alone saw none of the 28 entries that record what was found broken.*
 
 1. **Selected @AppleSupport over Retail Brands**: Chose AppleSupport because consumer electronics customer support has strict diagnostic procedures, high stakes (lithium battery safety), and well-defined escalation policies.
 2. **Embedded Vector Store (ChromaDB) over Hosted SaaS**: Opted for in-process SQLite ChromaDB to ensure the evaluation harness runs offline in <15 minutes with zero external infrastructure setup.
 3. **Cascading Priority Triage Gate over Single LLM Score**: Chose a cascading deterministic gate (Prompt Injection $\\rightarrow$ Safety Regex $\\rightarrow$ PII $\\rightarrow$ Human Request $\\rightarrow$ Sentiment $\\rightarrow$ Model Confidence $\\rightarrow$ Clarify $\\rightarrow$ Similarity $\\rightarrow$ Generation Guardrails) rather than trusting a single LLM to decide safety, eliminating hallucination risks on physical hazards.
-4. **Normalized Softmax Temperature Scaling on Cosine Similarities**: Applied temperature scaling ($T=0.12$) to raw cosine similarities to produce calibrated, bounded probability distributions for intent confidence.
+4. **Normalized Softmax Temperature Scaling on Cosine Similarities**: Applied temperature scaling ($T={classifier_temperature}$) to raw cosine similarities to produce calibrated, bounded probability distributions for intent confidence. *(This line said $T=0.12$ until adversarial review round 2 checked it against the code, where the default has been {classifier_temperature}. The drift guard in `tests/test_doc_code_consistency.py` only parsed `DECISION_LOG.md`, so a wrong constant in this generated report was invisible to it. The value is now read from `SemanticCentroidClassifier` at generation time and cannot drift again.)*
 5. **Zero Tolerance for Public PII Request, Plus PII-Echo Detection**: Strictly prohibited asking for Apple ID passwords or serial numbers in public tweets, *and* added a generation-time guardrail (`check_pii_echo`) that blocks a draft if it echoes back PII-shaped text the customer themselves posted (e.g. a phone number), rather than only checking the agent's own requests.
 6. **Intent-Filtered Vector Retrieval**: Filtered ChromaDB queries by the classified intent to prevent semantic drift between unrelated topics (e.g., battery drain queries matching iPad display issues).
 7. **Fail-Closed Circuit Breaker on Unhandled Exceptions**: Implemented a global try-except wrapper that unconditionally defaults to `ESCALATE` with `SYSTEM_EXCEPTION_FAIL_CLOSED` if any component crashes.
@@ -456,7 +652,7 @@ Two **over-triggers** are also asserted rather than tuned away, because for a sa
 12. **Removed Both Hardcoded Kappa Floors and Report the Real Number, Even When It's Bad**: `src/eval/human_agreement.py` previously did `max(kappa_g, 0.72)` and `max(0.70, kappa_s)` regardless of the actual computed values. Removed both; this run's real measured kappa is honestly reported in Section 3, including the case where it falls in "Slight agreement" or is negative -- an eval harness that cannot report a bad result is not measuring anything.
 13. **URL Domain Whitelisting via Regex Guardrail**: Restricted drafted links to `apple.co` and `support.apple.com`, stripping or flagging any LLM-hallucinated third-party domains.
 14. **Lexical-Overlap Grounding Check as a Model-Free Hallucination Proxy**: Without a reachable embedding model in every environment this code needs to run in, added `check_grounding()` -- a lexical content-word overlap check between a draft and its retrieved snippets -- as a cheap, dependency-light signal that a draft isn't inventing procedures unrelated to what was actually retrieved.
-15. **Real Kaggle Pairs in the RAG Corpus Instead of a 10-Example Hand-Written Seed Set, With Leakage Exclusion**: `HistoricalVectorStore` now indexes real `@AppleSupport` historical replies (`load_real_corpus()`), explicitly excluding every `source_tweet_id` present in the golden set so the eval can't retrieve its own answer key -- falling back to the small hand-written seed corpus only if the real pairs file is unavailable.
+15. **Real Kaggle Pairs in the RAG Corpus Instead of a 10-Example Hand-Written Seed Set, With Leakage Exclusion**: `HistoricalVectorStore` now indexes real `@AppleSupport` historical replies (`load_real_corpus()`), excluding golden-set rows from the corpus on three independent keys -- collapsed `source_tweet_id`, exact customer text, and exact agent reply -- so the eval can't retrieve its own answer key. *(This item read "excluding every `source_tweet_id`" until adversarial review round 3. That was the id-only guard, which matched two formats that could never be equal and excluded nothing -- see section 5 item 6. The sentence survived its own refutation appearing two sections above it, in the same generated document.)* -- falling back to the small hand-written seed corpus only if the real pairs file is unavailable.
 """
 
     with open(REPORT_OUTPUT_PATH, "w", encoding="utf-8") as f:
@@ -495,7 +691,7 @@ def write_benchmark_summary_json(
         # Which rows these numbers came from. Recorded here so the dashboard can
         # never display a headline figure without being able to say it was
         # measured on rows the thresholds were not tuned against -- the bias
-        # documented in REPORT.md section 5, item 5.
+        # documented in REPORT.md section 5, item 7.
         "split": split_info or {"note": "run produced no split information"},
         "triage": {
             "trivial": {
@@ -513,9 +709,25 @@ def write_benchmark_summary_json(
                 "escalation_recall": prod_metrics["triage"]["escalation_recall"],
                 "missed_escalation_count": prod_metrics["triage"]["missed_escalation_count"],
                 "total_escalations_true": prod_metrics["triage"]["total_escalations_true"],
+                # The rest of the error budget, not just the escalation half.
+                # CLAUDE.md's invariant is that every published number traces to a
+                # generated artifact; the false-escalation count and the full
+                # confusion were quoted in the report and absent from this file, so
+                # the largest triage error class (false CLARIFY) could not be
+                # checked against anything. Found by adversarial review round 3.
+                "false_escalation_count": prod_metrics["triage"]["false_escalation_count"],
+                "false_clarify_count": prod_metrics["triage"].get("false_clarify_count"),
+                "confusion": prod_metrics["triage"].get("confusion"),
             },
         },
         "intent": {
+            # Baseline intent accuracy was printed to the terminal and published in
+            # the report's headline table but never written here, so two of the five
+            # headline numbers traced to no artifact at all -- which is how README's
+            # "62.2% / 60.1%" comparison went unchecked for as long as it did.
+            # Found by adversarial review round 3.
+            "trivial": {"accuracy": trivial_metrics["intent"]["accuracy"]},
+            "simple": {"accuracy": simple_metrics["intent"]["accuracy"]},
             "production": {
                 "macro_f1": prod_metrics["intent"]["macro_f1"],
                 "accuracy": prod_metrics["intent"]["accuracy"],

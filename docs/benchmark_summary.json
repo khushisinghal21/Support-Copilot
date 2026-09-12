@@ -1,12 +1,13 @@
 {
-  "generated_at": "2026-09-11T16:44:30.469680+00:00",
+  "generated_at": "2026-09-12T03:08:01.152211+00:00",
   "golden_set": {
     "n": 188,
     "n_edge": 38,
     "pct_edge": 20,
     "n_escalate": 32,
     "pct_escalate": 17,
-    "enrichment_x": 19,
+    "enrichment_x": 85,
+    "enrichment_x_candidates": 19,
     "n_escalate_authored": 30,
     "n_escalate_real": 2,
     "pct_escalate_authored": 94
@@ -36,13 +37,28 @@
       "missed_escalation_count": 14
     },
     "production": {
-      "accuracy": 0.629,
-      "escalation_recall": 0.9048,
-      "missed_escalation_count": 2,
-      "total_escalations_true": 21
+      "accuracy": 0.6371,
+      "escalation_recall": 0.9524,
+      "missed_escalation_count": 1,
+      "total_escalations_true": 21,
+      "false_escalation_count": 21,
+      "false_clarify_count": 23,
+      "confusion": {
+        "AUTO_HANDLE->AUTO_HANDLE": 59,
+        "AUTO_HANDLE->CLARIFY": 23,
+        "AUTO_HANDLE->ESCALATE": 21,
+        "ESCALATE->AUTO_HANDLE": 1,
+        "ESCALATE->ESCALATE": 20
+      }
     }
   },
   "intent": {
+    "trivial": {
+      "accuracy": 0.2984
+    },
+    "simple": {
+      "accuracy": 0.4032
+    },
     "production": {
       "macro_f1": 0.6029,
       "accuracy": 0.6371,
@@ -97,7 +113,7 @@
       "overall_score": 3.97
     },
     "production": {
-      "overall_score": 4.07
+      "overall_score": 4.08
     }
   },
   "human_agreement": {
@@ -107,6 +123,6 @@
     "num_samples": 50
   },
   "latency_ms": {
-    "p95_production": 39.13
+    "p95_production": 36.67
   }
 }

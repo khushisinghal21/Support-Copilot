@@ -67,6 +67,29 @@ def compute_triage_metrics(y_true: list[str], y_pred: list[str]) -> dict[str, An
         # regardless of how many true escalations were actually in the
         # loaded golden set -- now the real denominator is available to format with.
         "total_escalations_true": total_escalations_true,
+        # The full triage confusion, because accuracy alone hid the single largest
+        # error class in this system. Adversarial review round 3 computed it by
+        # hand and found 23 of the 46 triage errors were AUTO_HANDLE -> CLARIFY --
+        # more than the 21 false escalations the report blamed for the low
+        # accuracy, and 22% of all genuine AUTO_HANDLE traffic. No document
+        # mentioned it, and three of them said the CLARIFY path was "covered by
+        # unit tests only, not by this benchmark", which is true only of the
+        # LABEL: the benchmark exercises the CLARIFY gate on 23 of 124 rows and it
+        # is wrong every time it fires. Computed here so it cannot go unreported
+        # again.
+        "confusion": {
+            f"{yt}->{yp}": sum(
+                1 for a, b in zip(y_true, y_pred, strict=False) if a == yt and b == yp
+            )
+            for yt in sorted(set(y_true) | set(y_pred))
+            for yp in sorted(set(y_true) | set(y_pred))
+            if sum(1 for a, b in zip(y_true, y_pred, strict=False) if a == yt and b == yp)
+        },
+        "false_clarify_count": sum(
+            1
+            for yt, yp in zip(y_true, y_pred, strict=False)
+            if yp == "CLARIFY" and yt != "CLARIFY"
+        ),
     }
 
 

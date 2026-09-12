@@ -1,0 +1,38 @@
+Baseline AFTER the full hardening pass and three adversarial review rounds.
+Generated 2026-09-12 03:08 UTC by: python -m src.eval.runner
+Every figure below is read from docs/benchmark_summary.json, not transcribed.
+
+Reported on the 124 held-out rows (docs/REPORT.md section 5 item 7).
+
+                     trivial    simple     production
+intent accuracy      29.8%      40.3%      63.7%
+triage accuracy      83.1%      75.8%      63.7%
+escalation recall    0.0%       33.3%      95.2%
+missed escalations   21         14         1   (of 21)
+
+intent macro-F1            0.6029
+judge overall (production) 4.08
+human-judge kappa          0.0716 (Slight agreement)
+P95 latency (warm)         36.67 ms
+
+TRIAGE ERROR BUDGET -- the part accuracy alone hides:
+  false escalations   21
+  false CLARIFY       23   <-- largest class; undisclosed until review round 3
+  missed escalations  1
+  AUTO_HANDLE->AUTO_HANDLE     59
+  AUTO_HANDLE->CLARIFY         23
+  AUTO_HANDLE->ESCALATE        21
+  ESCALATE->ESCALATE           20
+  ESCALATE->AUTO_HANDLE        1
+
+COMPARED TO docs/baselines/before.txt: not directly comparable. before.txt is
+an all-188 run; this is a 124-row held-out run. That is open item 17 in
+docs/ADVERSARIAL_REVIEW.md -- no committed artifact shows the post-split all-188
+numbers, so decision 16's 'behaviour-preserving' claim rests on a run that was
+observed but never written to a file.
+
+MOVEMENT FROM THE ROUND-2 STATE (both held-out, so these ARE comparable):
+  escalation recall  90.5% -> 95.2%   missed escalations 2 -> 1
+  triage accuracy    62.9% -> 63.7%
+Cause: the round-3 hazard/PII/human-request fixes catch escalations the earlier
+patterns missed. Not a tuning change -- no threshold was touched.

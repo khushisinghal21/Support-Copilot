@@ -51,7 +51,9 @@ cannot drift from the code again.
 Two examples end to end:
 
 **"My iPhone battery drains really fast since the last update. How can I check which apps are using the most battery?"**
-→ Intent: `HARDWARE_AND_BATTERY` (78% confidence) → retrieves 3 real historical resolutions on battery usage → drafts a grounded reply citing a real `support.apple.com` article → passes all guardrails → **AUTO_HANDLE**.
+→ Intent: `HARDWARE_AND_BATTERY` (74.2% confidence -- classification is deterministic, so this number is reproducible) → retrieves 3 real historical resolutions on battery usage → drafts a reply grounded in them → passes all guardrails → **AUTO_HANDLE**.
+
+   *Without a `GEMINI_API_KEY` -- the mode every published number in this repo was produced in -- the drafter returns a template/snippet reply and cites no URL. An earlier version of this line said "78% confidence" and "citing a real `support.apple.com` article"; neither reproduced. Corrected after adversarial review round 3 checked it by running the example.*
 
 **"Someone hacked my iCloud and bought 100 gift cards, cancel this now!"**
 → Triage gate fires immediately on account-compromise + churn signals → **ESCALATE** (`HIGH_FRUSTRATION_CHURN_RISK`) → no auto-reply is drafted at all; routed straight to a human specialist.
@@ -72,9 +74,9 @@ cp .env.example .env    # optional: add a real GEMINI_API_KEY here
 | Command | What it does |
 | :--- | :--- |
 | `python -m src.eval.runner` | Runs the full benchmark (188 examples, 2 baselines, LLM judge, human-agreement check) in under 15 minutes -- usually well under 1. |
-| `pytest tests/ -v` | Runs the test suite (213 test functions). |
+| `pytest tests/ -v` | Runs the test suite (257 test functions). |
 | `./run.sh` | Starts the dashboard + API at `http://localhost:8000`. |
-| `python -m src.cli --query "..."` | Processes one query from the terminal. |
+| `python -m src.cli process --text "..."` | Processes one query from the terminal. |
 
 Without a `GEMINI_API_KEY`, generation and judging fall back to deterministic/template behavior -- the eval still runs and produces real metrics, just not LLM-graded ones.
 
@@ -88,7 +90,8 @@ Without a `GEMINI_API_KEY`, generation and judging fall back to deterministic/te
 | Golden evaluation set (188 hand-labelled examples) | [`data/golden_eval_set.jsonl`](data/golden_eval_set.jsonl), [`data/README.md`](data/README.md) (sampling/labelling methodology) |
 | Evaluation harness + LLM judge + human agreement | [`src/eval/`](src/eval/), [`docs/benchmark_summary.json`](docs/benchmark_summary.json) |
 | Report (problem framing, baselines, failure analysis, "what's misleading about my number") | [`docs/REPORT.md`](docs/REPORT.md) |
-| Decision log (15 non-obvious decisions) | [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) |
+| Decision log (43 non-obvious decisions) | [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) |
+| Adversarial review: every round, every finding, including the rejected ones | [`docs/ADVERSARIAL_REVIEW.md`](docs/ADVERSARIAL_REVIEW.md) |
 
 Datasets/models/libraries borrowed and cited: [`docs/REPORT.md`](docs/REPORT.md) Section 8. Full audit trail of what was found broken and fixed along the way: [`docs/AUDIT_AND_FIX_PLAN.md`](docs/AUDIT_AND_FIX_PLAN.md).
 
@@ -98,19 +101,25 @@ Datasets/models/libraries borrowed and cited: [`docs/REPORT.md`](docs/REPORT.md)
 
 Regenerate anytime with `python -m src.eval.runner` -- these come straight from `docs/benchmark_summary.json`, not hand-typed.
 
-**Measured on the 124 held-out rows only.** The two triage thresholds were tuned against the other 64 (`calibration`) rows, so reporting on those would flatter the system. See `docs/REPORT.md` Section 5, item 5.
+**Measured on the 124 held-out rows only.** The two triage thresholds were tuned against the other 64 (`calibration`) rows, so reporting on those would flatter the system. See `docs/REPORT.md` Section 5, item 6.
+
+> **The RAG corpus used to contain this evaluation set's own answers.** A guard that claimed to exclude every golden-set row from the retrieval corpus compared two id formats that could never be equal, so it excluded **nothing** — **80 of the 124** held-out rows could retrieve, verbatim, the exact reply they were scored against (123 of the 162 distinct reference replies sat in the indexed corpus). This README said otherwise for the life of the project. Fixed, with the full finding and reproduction in [`docs/ADVERSARIAL_REVIEW.md`](docs/ADVERSARIAL_REVIEW.md); grounding and ROUGE-L figures published before 2026-09-11 were inflated by an unknown amount.
 
 | Metric | Trivial baseline | Simple (TF-IDF) baseline | Production |
 | :--- | :---: | :---: | :---: |
 | Intent accuracy | 29.8% | 40.3% | **63.7%** |
-| Triage accuracy | 83.1% | 75.8% | **62.9%** ⚠️ |
-| Escalation recall | 0.0% | 33.3% | **90.5%** |
-| Missed escalations (of 21) | 21 | 14 | **2** |
+| Triage accuracy | 83.1% | 75.8% | **63.7%** ⚠️ |
+| Escalation recall | 0.0% | 33.3% | **95.2%** |
+| Missed escalations (of 21) | 21 | 14 | **1** |
 | Human-judge kappa | -- | -- | **0.07** ("Slight agreement") |
 
-Triage *accuracy* looks worse for the production system than either baseline -- that's expected, not a bug: the trivial baseline "wins" on accuracy only because it never escalates anything, which also means it misses 100% of real safety hazards. Escalation *recall* (90.5% vs 0%) is the number that actually matters for a safety system.
+Triage *accuracy* looks worse for the production system than either baseline -- that's expected, not a bug: the trivial baseline "wins" on accuracy only because it never escalates anything, which also means it misses 100% of real safety hazards. Escalation *recall* (95.2% vs 0%) is the number that actually matters for a safety system.
 
-Earlier versions of this table showed 62.2% / 60.1% / 93.8% measured across all 188 rows, with thresholds tuned on those same rows. Moving to held-out reporting cost 3.3 points of escalation recall and 2.0 points of triage accuracy. Those are the honest numbers. Full breakdown, including why the human-judge kappa is weak and what that implies, is in `docs/REPORT.md` Section 5.
+**What actually drives the 63.7%, stated because it is not what you would guess:** of 45 triage errors, 23 are the system asking a clarifying question instead of answering (22% of all genuine `AUTO_HANDLE` traffic), 21 are false escalations, and 1 is a missed escalation. The false-`CLARIFY` class is the largest and was undisclosed until the third round of adversarial review computed the confusion matrix. `docs/REPORT.md` Section 5 item 3.
+
+Measured on all 188 rows, with thresholds tuned on those same rows, this code scores 61.7% / 64.9% / 93.8% (`docs/baselines/before.txt`). Moving to held-out reporting cost **2.0 points of triage accuracy and 3.3 points of escalation recall**, while intent accuracy rose.
+
+   *This paragraph previously compared against 62.2% / 60.1% / 93.8% and then asserted a 2.0-point triage loss -- but 60.1% → 62.9% is a gain of 2.8. The 60.1% figure came from the pre-hardening README and was itself never a measurement of this code; splicing two baselines into one sentence produced a delta that contradicted its own numbers. Found by adversarial review round 3.* Full breakdown, including why the human-judge kappa is weak and what that implies, is in `docs/REPORT.md` Section 5.
 
 ---
 

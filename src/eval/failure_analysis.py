@@ -116,17 +116,43 @@ def mine_failure_modes(failures: list[dict[str, Any]], top_n: int = 5) -> list[d
 
     results = []
     for cat, count in counts.most_common(top_n):
-        example = by_category[cat][0]
         info = _CATEGORY_INFO.get(cat, _CATEGORY_INFO["other"])
-        title = info["title_fmt"].format(
-            true=example.get("true_intent") or example.get("true_triage", ""),
-            pred=example.get("pred_intent") or example.get("pred_triage", ""),
-        )
+
+        # The title names a SPECIFIC (true -> pred) pair, so it must be the pair
+        # the count describes. It used to be formatted from by_category[cat][0] --
+        # an arbitrary example -- while `count` was the whole category. On a real
+        # run that published "28 of 66 failures (~42%): Intent confused between
+        # OUT_OF_SCOPE_AMBIGUOUS and HOW_TO_CONFIGURATION" when that pair occurred
+        # 3 times out of 66; the actual most common pair was
+        # HARDWARE_AND_BATTERY -> OS_SOFTWARE_TROUBLESHOOTING at 6. The mitigation
+        # text then told the reader to add prototypes "for this specific pair".
+        # Found by adversarial review round 3.
+        #
+        # The `other` bucket additionally formatted {true}/{pred} from the INTENT
+        # fields while the bucket is entirely triage mismatches, rendering the
+        # meaningless "Other triage mismatch (X -> X)". It reads the triage fields
+        # now.
+        if cat == "other":
+            key = lambda f: (f.get("true_triage") or "", f.get("pred_triage") or "")  # noqa: E731
+        else:
+            key = lambda f: (  # noqa: E731
+                f.get("true_intent") or f.get("true_triage") or "",
+                f.get("pred_intent") or f.get("pred_triage") or "",
+            )
+        pair_counts = Counter(key(f) for f in by_category[cat])
+        (dominant_true, dominant_pred), pair_count = pair_counts.most_common(1)[0]
+        example = next(f for f in by_category[cat] if key(f) == (dominant_true, dominant_pred))
+        title = info["title_fmt"].format(true=dominant_true, pred=dominant_pred)
+        if "{true}" in info["title_fmt"] and pair_count != count:
+            # Both numbers, because the category total is the useful one and the
+            # pair total is the one the title is actually about.
+            title += f" -- {pair_count} of this category's {count} failures"
         results.append(
             {
                 "title": title,
                 "frequency": round(100 * count / total),
                 "count": count,
+                "dominant_pair_count": pair_count,
                 "total_failures": total,
                 "query": example.get("text", ""),
                 "actual": (f"intent={example.get('pred_intent')}, triage={example.get('pred_triage')}"),

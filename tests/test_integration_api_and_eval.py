@@ -119,7 +119,7 @@ def test_rag_corpus_excludes_every_golden_set_source_row():
     that no corpus row's id was in the exclusion set -- which is trivially true
     when the two id namespaces cannot intersect at all. Golden rows carried
     doubled ids ("kaggle_kaggle_187962_187961") against corpus ids
-    ("kaggle_187962_187961"), so the guard removed 0 of 1000 rows for the life of
+    ("kaggle_187962_187961"), so the guard removed 0 rows (of the 997 it scanned to fill an 800-record index) for the life of
     the project while README, REPORT and CLAUDE.md all claimed it worked.
 
     The assertions below are written so that cannot happen again: the guard must
