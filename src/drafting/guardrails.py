@@ -59,6 +59,38 @@ from src.triage.rules import CREDIT_CARD_REGEX, EMAIL_REGEX, PHONE_REGEX, SSN_RE
 
 logger = logging.getLogger(__name__)
 
+# WHY THE LINK-CHECK OUTCOMES ARE COUNTED
+# ---------------------------------------
+# Live link verification is opt-in (ENABLE_LIVE_LINK_CHECK, default off) and it
+# moves the headline triage number, because the Kaggle corpus is 2017-2018 and its
+# `t.co` links are now dead: a dead link is a real guardrail violation, so the same
+# code scores differently depending on whether the machine running it can reach
+# the internet.
+#
+# Two real runs of identical code, same commit:
+#   * sandbox, egress-proxied  -> every check "inconclusive" (which PASSES)
+#                              -> triage 63.7%, P95 36ms
+#   * laptop, real internet    -> dead links actually detected
+#                              -> triage 58.9%, P95 2188ms
+#
+# Neither number is wrong. The report quoting one of them without saying which
+# configuration produced it is. That is the same failure as the judge-mode banner
+# describing configuration rather than outcome -- except here the report recorded
+# NEITHER. Counted so it can state what link verification actually did, including
+# the case where it was switched on and achieved nothing because the network was
+# blocked.
+LINK_CHECK_OUTCOMES: dict[str, int] = {}
+
+
+def reset_link_check_outcomes() -> None:
+    """Zeroes the per-run link-check tally."""
+    LINK_CHECK_OUTCOMES.clear()
+
+
+def link_check_outcomes() -> dict[str, int]:
+    """{status: count} for the current run, e.g. {"ok": 12, "broken": 30}."""
+    return dict(LINK_CHECK_OUTCOMES)
+
 # Allowed official Apple domain prefixes and Twitter official link wrapper (t.co)
 WHITELISTED_URL_PATTERN = re.compile(
     r"^https?://(apple\.co|support\.apple\.com|iforgot\.apple\.com|reportaproblem\.apple\.com|t\.co)/",
@@ -358,6 +390,7 @@ class OutputGuardrail:
 
         problems = []
         for result in verify_all_urls(text, timeout=self.link_check_timeout):
+            LINK_CHECK_OUTCOMES[result.status] = LINK_CHECK_OUTCOMES.get(result.status, 0) + 1
             if result.status in ("broken", "suspicious_redirect"):
                 problems.append(f"{result.url} ({result.status}: {result.detail})")
             elif result.status == "inconclusive":

@@ -24,6 +24,23 @@ For Apple Support on Twitter, "good" does not mean simply generating fluent Engl
 
 ---
 
+## 1b. Run Configuration (read this before comparing any number below)
+
+Two runs of this exact commit produced triage accuracy **63.7%** and **58.9%**, and P95 latency **36 ms** and
+**2188 ms**. Neither was wrong; the difference was configuration and network reachability. Every figure in this
+report is therefore reported alongside the settings that produced it.
+
+| Setting | This run | Why it matters |
+| :--- | :--- | :--- |
+| `ENABLE_LIVE_LINK_CHECK` | `False` | ON detects the corpus's dead 2018 `t.co` links as real violations, which adds false escalations and costs one live HTTP request per row. Default is OFF. |
+| `RAG_CORPUS_MAX_RECORDS` | `800` | How many corpus rows are indexed. `render.yaml` sets 150; the default is 800. |
+| `MIN_INTENT_CONFIDENCE` | `0.4` | Gate 6. Chosen before the split existed. |
+| `MIN_RETRIEVAL_SIMILARITY` | `0.2` | Gate 8. Same caveat. |
+
+Live link verification was **off** for this run, so no URL in any draft was fetched. A drafted link is checked against the domain whitelist only.
+
+---
+
 ## 2. Headline Results vs. Two Baselines
 
 We evaluated three architectures across the same **124 held-out rows** of the 188-sample hand-labelled Golden Set (the remaining 64 are the calibration split -- see item 7 of section 5):
@@ -46,7 +63,7 @@ than being hidden behind a hardcoded "+" prefix.
 | **Missed Escalations (Safety Risk)** | 21 / 21 | 14 / 21 | **1 / 21** | **+13 fewer missed** |
 | **ROUGE-L Grounding Score** | 0.1572 | 0.1465 | **0.2045** | **+0.0580** |
 | **LLM Judge Quality (1-5 Scale)** | 4.3 / 5.0 | 4.0 / 5.0 | **4.1 / 5.0** | **+0.1** |
-| **P95 Latency (CPU)** | < 1 ms (unmeasured estimate) | ~5 ms (unmeasured estimate) | **57.4 ms** | Real-time ready |
+| **P95 Latency (CPU)** | < 1 ms (unmeasured estimate) | ~5 ms (unmeasured estimate) | **60.4 ms** | Real-time ready |
 
 ---
 

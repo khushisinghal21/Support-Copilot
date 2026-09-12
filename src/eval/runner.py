@@ -10,6 +10,7 @@ from rich.table import Table
 
 from src.config import BENCHMARK_SUMMARY_JSON_PATH, REPORT_OUTPUT_PATH, TARGET_BRAND
 from src.drafting.generator import reset_llm_counters
+from src.drafting.guardrails import reset_link_check_outcomes
 from src.eval.failure_analysis import mine_failure_modes
 from src.eval.human_agreement import compute_human_judge_agreement
 from src.eval.judge import LLMJudge, reset_judge_counters
@@ -54,6 +55,7 @@ def run(
     # on module import order.
     reset_llm_counters()
     reset_judge_counters()
+    reset_link_check_outcomes()
     counts = split_counts()
     heldout_rows = load_golden_dataset(split=HELDOUT)
     calibration_rows = load_golden_dataset(split=CALIBRATION)

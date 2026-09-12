@@ -164,3 +164,60 @@ def test_counters_reset_between_runs():
     judge_module.reset_judge_counters()
     assert generator_module.llm_call_stats()["attempted"] == 0
     assert judge_module.judge_call_stats()["attempted"] == 0
+
+
+# ---------------------------------------------------------------------------
+# The same lesson, one level out: the report must record the CONFIGURATION that
+# produced its numbers, not just the outcome of the LLM calls.
+# ---------------------------------------------------------------------------
+def test_the_report_records_whether_live_link_checking_was_on(monkeypatch):
+    """Two runs of identical code gave triage 63.7% and 58.9%, and P95 36ms and
+    2188ms, because of ENABLE_LIVE_LINK_CHECK plus whether the machine could reach
+    the internet. The corpus is 2017-2018 and its t.co links are dead, so with
+    verification on and a real network those become genuine guardrail violations.
+
+    Neither number was wrong. The report quoting one without saying which
+    configuration produced it was.
+    """
+    import src.drafting.guardrails as guardrails_module
+
+    note = report_module._run_configuration_note()
+    assert "ENABLE_LIVE_LINK_CHECK" in note
+    assert "RAG_CORPUS_MAX_RECORDS" in note
+    assert "MIN_INTENT_CONFIDENCE" in note
+    assert "MIN_RETRIEVAL_SIMILARITY" in note
+
+    # With the flag off, it must say nothing was fetched rather than stay silent.
+    monkeypatch.setattr(guardrails_module, "LINK_CHECK_OUTCOMES", {})
+    from src import config as config_module
+
+    monkeypatch.setattr(config_module, "ENABLE_LIVE_LINK_CHECK", False)
+    assert "was **off** for this run" in report_module._run_configuration_note()
+
+
+def test_a_link_check_that_verified_nothing_says_so(monkeypatch):
+    """The trap this closes: switching the flag ON in a network-blocked
+    environment costs runtime and verifies NOTHING, because an inconclusive check
+    passes rather than fail-closing. A reader seeing "link verification: on" would
+    reasonably assume links were verified.
+    """
+    import src.drafting.guardrails as guardrails_module
+    from src import config as config_module
+
+    monkeypatch.setattr(config_module, "ENABLE_LIVE_LINK_CHECK", True)
+    monkeypatch.setattr(guardrails_module, "LINK_CHECK_OUTCOMES", {"inconclusive": 102})
+    note = report_module._run_configuration_note()
+    assert "Every check was inconclusive" in note
+    assert "verified nothing" in note
+
+
+def test_failed_link_checks_are_flagged_as_making_the_numbers_incomparable(monkeypatch):
+    import src.drafting.guardrails as guardrails_module
+    from src import config as config_module
+
+    monkeypatch.setattr(config_module, "ENABLE_LIVE_LINK_CHECK", True)
+    monkeypatch.setattr(guardrails_module, "LINK_CHECK_OUTCOMES", {"broken": 30, "ok": 12})
+    note = report_module._run_configuration_note()
+    assert "30 link(s) failed verification" in note
+    assert "NOT comparable" in note
+    assert "corpus age, not a regression" in note

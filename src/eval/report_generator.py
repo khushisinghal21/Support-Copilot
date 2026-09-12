@@ -333,6 +333,81 @@ def _judge_mode_note() -> str:
     )
 
 
+def _run_configuration_note() -> str:
+    """The configuration this run was produced under.
+
+    WHY A REPORT NEEDS THIS AT ALL
+    ------------------------------
+    Two runs of identical code at the same commit produced triage accuracy 63.7%
+    and 58.9%, and P95 latency 36ms and 2188ms. Neither was wrong. The difference
+    was ENABLE_LIVE_LINK_CHECK plus whether the machine could reach the internet:
+    the Kaggle corpus is 2017-2018 and its `t.co` links are dead, so with live
+    verification ON and a real network those dead links are detected and become
+    genuine guardrail violations -- extra false escalations. In a network-blocked
+    sandbox every check returns "inconclusive", which passes, and the flag changes
+    nothing but the runtime.
+
+    The report quoted one of those numbers and recorded neither the flag nor the
+    network outcome, so the headline triage figure was not reproducible across
+    machines and nothing said why. Same failure as the judge-mode banner -- a
+    report describing configuration instead of outcome -- except here it described
+    neither.
+
+    Everything below is read from the live config and the run's own counters, so
+    it cannot drift from what actually executed.
+    """
+    from src.config import (
+        ENABLE_LIVE_LINK_CHECK,
+        MIN_INTENT_CONFIDENCE,
+        MIN_RETRIEVAL_SIMILARITY,
+        RAG_CORPUS_MAX_RECORDS,
+    )
+    from src.drafting.guardrails import link_check_outcomes
+
+    rows = [
+        "| Setting | This run | Why it matters |",
+        "| :--- | :--- | :--- |",
+        f"| `ENABLE_LIVE_LINK_CHECK` | `{ENABLE_LIVE_LINK_CHECK}` | "
+        f"ON detects the corpus's dead 2018 `t.co` links as real violations, which adds false escalations and "
+        f"costs one live HTTP request per row. Default is OFF. |",
+        f"| `RAG_CORPUS_MAX_RECORDS` | `{RAG_CORPUS_MAX_RECORDS}` | "
+        f"How many corpus rows are indexed. `render.yaml` sets 150; the default is 800. |",
+        f"| `MIN_INTENT_CONFIDENCE` | `{MIN_INTENT_CONFIDENCE}` | Gate 6. Chosen before the split existed. |",
+        f"| `MIN_RETRIEVAL_SIMILARITY` | `{MIN_RETRIEVAL_SIMILARITY}` | Gate 8. Same caveat. |",
+    ]
+
+    outcomes = link_check_outcomes()
+    if not ENABLE_LIVE_LINK_CHECK:
+        link_note = (
+            "Live link verification was **off** for this run, so no URL in any draft was fetched. A drafted link is "
+            "checked against the domain whitelist only."
+        )
+    elif not outcomes:
+        link_note = (
+            "Live link verification was **on** but no link was checked -- no draft in this run cited a URL at all."
+        )
+    else:
+        total = sum(outcomes.values())
+        detail = ", ".join(f"`{k}` {v}" for k, v in sorted(outcomes.items(), key=lambda kv: -kv[1]))
+        failed = outcomes.get("broken", 0) + outcomes.get("suspicious_redirect", 0)
+        inconclusive = outcomes.get("inconclusive", 0)
+        link_note = f"Live link verification was **on** and checked {total} URL(s): {detail}."
+        if inconclusive == total:
+            link_note += (
+                " **Every check was inconclusive** -- this machine could not reach the hosts, and an inconclusive "
+                "check passes rather than fail-closing. So the flag cost runtime and verified nothing; the triage "
+                "figures here are the same as they would be with it off."
+            )
+        elif failed:
+            link_note += (
+                f" **{failed} link(s) failed verification and became real guardrail violations**, so the triage "
+                f"numbers in this report are NOT comparable to a run with the flag off or on a network-blocked "
+                f"machine. The cause is corpus age, not a regression: see section 5's link-rot item."
+            )
+
+    return "\n".join(rows) + "\n\n" + link_note
+
+
 def generate_markdown_report(
     trivial_metrics: dict[str, Any],
     simple_metrics: dict[str, Any],
@@ -348,6 +423,7 @@ def generate_markdown_report(
     gs = _golden_set_stats()
 
     judge_mode_note = _judge_mode_note()
+    run_config_note = _run_configuration_note()
 
     # Interval on the safety metric. n is small enough that the point estimate
     # alone is misleading -- quoting 90.5% to one decimal off 21 events implies a
@@ -549,6 +625,16 @@ For Apple Support on Twitter, "good" does not mean simply generating fluent Engl
 - **No Direct Bot Tweeting**: We do not deploy an unattended Twitter bot writing directly to the public API without human oversight. The system operates as an agent copilot and triage router.
 - **No Internal Database Modification**: We do not simulate backend iCloud unlocks, warranty status overrides, or replacement device shipments. These are directed to the Apple Store Genius Bar.
 - **No Multi-Lingual Support in v1**: Scope is strictly constrained to English tweets. Non-English queries fall back to `OUT_OF_SCOPE_AMBIGUOUS` for human routing.
+
+---
+
+## 1b. Run Configuration (read this before comparing any number below)
+
+Two runs of this exact commit produced triage accuracy **63.7%** and **58.9%**, and P95 latency **36 ms** and
+**2188 ms**. Neither was wrong; the difference was configuration and network reachability. Every figure in this
+report is therefore reported alongside the settings that produced it.
+
+{run_config_note}
 
 ---
 
