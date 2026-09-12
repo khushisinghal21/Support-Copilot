@@ -66,10 +66,23 @@ Two examples end to end:
 git clone https://github.com/khushisinghal21/Support-Copilot.git
 cd Support-Copilot
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+
+# The CPU-only index URL must be in the SAME pip call as the requirements file --
+# a separate `pip install torch` beforehand does not survive, because the second
+# command is a fresh resolver that pulls the CUDA build back in from PyPI.
+pip install --index-url https://download.pytorch.org/whl/cpu \
+            --extra-index-url https://pypi.org/simple \
+            -r requirements.lock
+
+pip install -r requirements-dev.txt   # ruff, mypy, pytest-cov, pre-commit (pinned)
 
 cp .env.example .env    # optional: add a real GEMINI_API_KEY here
 ```
+
+`requirements.lock` is the pinned set; `requirements.txt` declares compatibility with `>=` and no upper bound, which
+is right for a library and wrong for reproducing these numbers. The dev tooling is separate because `src/` does not
+import it -- but you need it to run the checks CI gates on, and `ruff` there is pinned to the same version
+`.pre-commit-config.yaml` uses so your hook and CI cannot disagree.
 
 | Command | What it does |
 | :--- | :--- |
@@ -78,7 +91,11 @@ cp .env.example .env    # optional: add a real GEMINI_API_KEY here
 | `./run.sh` | Starts the dashboard + API at `http://localhost:8000`. |
 | `python -m src.cli process --text "..."` | Processes one query from the terminal. |
 
-Without a `GEMINI_API_KEY`, generation and judging fall back to deterministic/template behavior -- the eval still runs and produces real metrics, just not LLM-graded ones.
+Without a `GEMINI_API_KEY`, generation and judging fall back to deterministic/template behavior -- the eval still
+runs and produces real metrics, just not LLM-graded ones. **The same thing happens with a key present and an
+exhausted quota** (Gemini's free tier is 5 requests/minute against 124 rows), which the report used to describe as
+"Judge mode: live LLM" because it checked whether a key existed rather than whether any call succeeded. It now
+counts the calls and says which actually happened.
 
 ---
 
@@ -101,9 +118,16 @@ Datasets/models/libraries borrowed and cited: [`docs/REPORT.md`](docs/REPORT.md)
 
 Regenerate anytime with `python -m src.eval.runner` -- these come straight from `docs/benchmark_summary.json`, not hand-typed.
 
-**Measured on the 124 held-out rows only.** The two triage thresholds were tuned against the other 64 (`calibration`) rows, so reporting on those would flatter the system. See `docs/REPORT.md` Section 5, item 6.
+**Measured on the 124 held-out rows only.** The two triage thresholds were tuned against the other 64 (`calibration`) rows, so reporting on those would flatter the system. See `docs/REPORT.md` Section 5, item 7.
 
 > **The RAG corpus used to contain this evaluation set's own answers.** A guard that claimed to exclude every golden-set row from the retrieval corpus compared two id formats that could never be equal, so it excluded **nothing** — **80 of the 124** held-out rows could retrieve, verbatim, the exact reply they were scored against (123 of the 162 distinct reference replies sat in the indexed corpus). This README said otherwise for the life of the project. Fixed, with the full finding and reproduction in [`docs/ADVERSARIAL_REVIEW.md`](docs/ADVERSARIAL_REVIEW.md); grounding and ROUGE-L figures published before 2026-09-11 were inflated by an unknown amount.
+
+> **These figures are configuration-dependent, and the configuration is stated.** Measured with
+> `ENABLE_LIVE_LINK_CHECK=false` (the default) and no `GEMINI_API_KEY`. With live link verification **on** and a
+> machine that can reach the internet, triage accuracy drops to **58.9%** and P95 latency rises from 37&nbsp;ms to
+> **2188&nbsp;ms** — because the Kaggle corpus is 2017-2018 and its `t.co` links are now dead, and a dead link is a
+> real guardrail violation. That is corpus age, not a regression. Neither number is wrong; publishing one without
+> saying which produced it was. `docs/REPORT.md` section 1b records the settings of every run.
 
 | Metric | Trivial baseline | Simple (TF-IDF) baseline | Production |
 | :--- | :---: | :---: | :---: |
@@ -126,7 +150,7 @@ Measured on all 188 rows, with thresholds tuned on those same rows, this code sc
 ## Architecture
 
 * `src/intent/` -- semantic centroid classifier over 5 data-derived intents, no training data required.
-* `src/drafting/` -- retrieval-augmented generation over real historical `@AppleSupport` replies, plus output guardrails (length, PII, unsafe advice, grounding, and live link verification -- `src/drafting/link_checker.py` actually fetches any cited URL rather than trusting a domain whitelist alone).
+* `src/drafting/` -- retrieval-augmented generation over real historical `@AppleSupport` replies, plus output guardrails (length, PII, unsafe advice, grounding, and optional live link verification -- `src/drafting/link_checker.py` fetches any cited URL rather than trusting a domain whitelist alone, though it is **off by default**: one HTTP request per row breaks the offline-in-under-15-minutes guarantee, and on this 2018 corpus it changes the triage numbers, so it is meant for single live queries rather than bulk eval).
 * `src/triage/` -- a 9-gate deterministic cascade (prompt injection → hazards → PII → human request → frustration/fraud → confidence → clarify → grounding → generation guardrails) that decides `AUTO_HANDLE`, `ESCALATE`, or `CLARIFY`, always with a stated reason code.
 * `src/eval/` -- the benchmark harness, LLM-as-judge, human-agreement calibration, and failure-mode mining.
 
